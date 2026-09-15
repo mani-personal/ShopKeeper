@@ -1,0 +1,6 @@
+import {openDatabase,migrate} from '../server/db.mjs';
+import {bootstrap} from '../server/bootstrap.mjs';
+import {createApp} from '../server/app.mjs';
+let ready;
+async function initialize(){const db=openDatabase();try{await migrate(db);await bootstrap(db,{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD,seedDemo:process.env.SEED_DEMO==='true'});const origin=process.env.APP_ORIGIN;if(!origin?.startsWith('https://'))throw Error('Set APP_ORIGIN to your canonical HTTPS site URL.');return createApp(db,{appOrigin:origin,secure:true,trustProxy:1,frontend:'__vercel_static_frontend__'});}catch(e){await db.close();throw e}}
+export default async function handler(req,res){try{ready??=initialize().catch(e=>{ready=undefined;throw e});const app=await ready;const url=new URL(req.url,'https://internal.invalid');if(url.searchParams.has('__route')){const path=url.searchParams.get('__route')||'';url.searchParams.delete('__route');req.url='/api/'+path+(url.search?'?'+url.searchParams.toString():'');}return app(req,res);}catch(e){console.error('API initialization failed:',e.message);res.statusCode=503;res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify({error:'Backend setup is incomplete. Check database and administrator environment settings.'}));}}

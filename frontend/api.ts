@@ -1,0 +1,5 @@
+let csrf='';
+export function setCsrf(value:string){csrf=value;}
+export async function api(path:string,body?:unknown){const response=await fetch(path,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:body===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf},...(body===undefined?{}:{body:JSON.stringify(body)})});const data=await response.json();if(response.status===401&&path!=='/api/auth/login'&&path!=='/api/auth/me')window.dispatchEvent(new Event('session-expired'));if(!response.ok)throw Error(data.error||'Request failed.');if(data.csrf)setCsrf(data.csrf);return data;}
+export async function storeFetch(path:string,init?:RequestInit){const response=await fetch(path,{...init,credentials:'same-origin',headers:{...init?.headers,...(init?.method==='POST'?{'X-CSRF-Token':csrf}:{})}});if(response.status===401)window.dispatchEvent(new Event('session-expired'));return response;}
+export async function logout(){try{await api('/api/auth/logout',{})}finally{location.assign('/')}}

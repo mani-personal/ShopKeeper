@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm ci --ignore-scripts",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.js": {"maxDuration": 60, "includeFiles": "{server/**,migrations/**}"}
+  },
+  "rewrites": [
+    {"source": "/api/:path*", "destination": "/api/index?__route=:path*"},
+    {"source": "/((?!api/|assets/|favicon.svg).*)", "destination": "/index.html"}
+  ]
+}

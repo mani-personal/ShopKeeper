@@ -1,0 +1,24 @@
+import { scrypt as scryptCallback, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
+const scrypt = promisify(scryptCallback);
+export const digest = value => createHash('sha256').update(value).digest('hex');
+export const token = () => randomBytes(32).toString('base64url');
+export function validPassword(p) { return typeof p === 'string' && p.length >= 12 && p.length <= 128; }
+export function email(value) { if (typeof value !== 'string' || value.length > 200 || !/^\S+@\S+\.\S+$/.test(value.trim()))
+    throw Object.assign(Error('Enter a valid email address.'), { status: 400 }); return value.trim().toLowerCase(); }
+export async function hashPassword(p) { if (!validPassword(p))
+    throw Object.assign(Error('Use a password with 12–128 characters.'), { status: 400 }); const salt = randomBytes(16).toString('hex'); const key = await scrypt(p, salt, 64); return `scrypt:${salt}:${key.toString('hex')}`; }
+export async function verifyPassword(p, hash) { if (typeof p !== 'string' || p.length > 128)
+    return false; const [, salt, key] = hash.split(':'); const check = await scrypt(p, salt, 64); const saved = Buffer.from(key, 'hex'); return saved.length === check.length && timingSafeEqual(saved, check); }
+export async function limit(db,key,max,windowMs=900000){const now=Date.now();const row=await db.prepare('INSERT INTO attempts(key,count,reset_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN attempts.reset_at<=? THEN 1 ELSE attempts.count+1 END,reset_at=CASE WHEN attempts.reset_at<=? THEN EXCLUDED.reset_at ELSE attempts.reset_at END RETURNING count').get(key,now+windowMs,now,now);if(row.count>max)throw Object.assign(Error('Too many attempts. Please try again later.'),{status:429});}
+export async function readSession(db, req) { const raw = req.headers.cookie?.split(';').map(x => x.trim()).find(x => x.startsWith('shop_session='))?.slice(13); if (!raw)
+    return null; return await db.prepare('SELECT users.id,users.email,users.role,users.name,sessions.csrf,sessions.hash FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>?').get(digest(raw), Date.now()) ?? null; }
+export async function startSession(db, res, user, secure) { const raw = token(), csrf = token(); await db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run(digest(raw), user.id, csrf, Date.now() + 8 * 3600000); res.cookie('shop_session', raw, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: 8 * 3600000 }); return { user: { id: user.id, email: user.email, role: user.role, name: user.name }, csrf }; }
+export async function clearSession(db, res, req, secure) { const current = await readSession(db, req); if (current)
+    await db.prepare('DELETE FROM sessions WHERE hash=?').run(current.hash); res.clearCookie('shop_session', { httpOnly: true, secure, sameSite: 'strict', path: '/' }); }
+export async function allowedVendors(db, user) { return user.role === 'owner' ? await db.prepare('SELECT * FROM vendors ORDER BY rowid').all() : await db.prepare('SELECT v.* FROM vendors v JOIN memberships m ON m.vendor_id=v.id WHERE m.user_id=? ORDER BY v.rowid').all(user.id); }
+export async function requireVendor(db, user, id) { if (typeof id !== 'string' || !id)
+    throw Object.assign(Error('Choose a store.'), { status: 400 }); const row = await db.prepare('SELECT * FROM vendors WHERE id=? FOR UPDATE').get(id); if (!row || user.role !== 'owner' && !await db.prepare('SELECT 1 FROM memberships WHERE user_id=? AND vendor_id=?').get(user.id, id))
+    throw Object.assign(Error('Store not found or access denied.'), { status: 403 }); return row; }
+export function requireOwner(user) { if (user.role !== 'owner')
+    throw Object.assign(Error('Only the administrator can manage vendor accounts.'), { status: 403 }); }

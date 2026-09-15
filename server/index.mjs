@@ -1,0 +1,3 @@
+import {openDatabase,migrate} from './db.mjs';import {bootstrap} from './bootstrap.mjs';import {createApp} from './app.mjs';
+const origin=process.env.APP_ORIGIN||'http://localhost:3000';const db=openDatabase();await migrate(db);await bootstrap(db,{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD,seedDemo:process.env.SEED_DEMO==='true'});
+const app=createApp(db,{appOrigin:origin,secure:origin.startsWith('https://'),trustProxy:false});const server=app.listen(Number(process.env.PORT||3000),'127.0.0.1',()=>console.log('Shopkeeper API started.'));for(const sig of ['SIGTERM','SIGINT'])process.on(sig,()=>server.close(async()=>{await db.close();process.exit(0)}));

@@ -1,0 +1,12 @@
+CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('owner','vendor')),name TEXT NOT NULL,created_at BIGINT NOT NULL);
+CREATE UNIQUE INDEX single_owner ON users(role) WHERE role='owner';
+CREATE TABLE sessions(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,csrf TEXT NOT NULL,expires BIGINT NOT NULL);
+CREATE INDEX sessions_user ON sessions(user_id);
+CREATE INDEX sessions_expiry ON sessions(expires);
+CREATE TABLE vendors(id TEXT PRIMARY KEY,owner_name TEXT NOT NULL,business_type TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 0,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE memberships(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,vendor_id TEXT NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,PRIMARY KEY(user_id,vendor_id));
+CREATE TABLE tokens(hash TEXT PRIMARY KEY,email TEXT NOT NULL,vendor_id TEXT REFERENCES vendors(id) ON DELETE CASCADE,kind TEXT NOT NULL CHECK(kind IN ('invite','reset')),expires BIGINT NOT NULL);
+CREATE INDEX tokens_expiry ON tokens(expires);
+CREATE TABLE commands(vendor_id TEXT NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,key TEXT NOT NULL,digest TEXT NOT NULL,PRIMARY KEY(vendor_id,key));
+CREATE TABLE audit(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,created_at BIGINT NOT NULL,user_id TEXT NOT NULL,vendor_id TEXT,action TEXT NOT NULL);
+CREATE TABLE attempts(key TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at BIGINT NOT NULL);
