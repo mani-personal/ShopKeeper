@@ -62,7 +62,7 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
                         throw bad('Store and owner names are required.');
                 if (!businessTypes.includes(a.businessType) || typeof a.phone !== 'string' || a.phone.length > 30)
                     throw bad('Invalid vendor details.');
-                const s = initial();
+                const s = initial();s.trialStartedAt=new Date().toISOString();
                 s.settings = { name: a.name.trim(), phone: a.phone, address: '', lowPercent: 20 };
                 if (!await db.prepare('SELECT 1 FROM vendors WHERE id=?').get(a.id))
                     await db.prepare('INSERT INTO vendors(id,owner_name,business_type,data) VALUES(?,?,?,?)').run(a.id, a.owner.trim(), a.businessType, JSON.stringify(s));
@@ -108,10 +108,10 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
                     await db.prepare('DELETE FROM tokens WHERE vendor_id=? AND email=?').run(selected, mail);
                 }
                 else {
-                    const safe = ['product', 'sale', 'purchase', 'bill_import', 'contact', 'expense', 'settings'];
+                    const safe = ['product', 'sale', 'purchase', 'bill_import', 'contact', 'expense', 'settings', 'supplier_return', 'supplier_payment', 'purchase_settlement', 'subscription_request', 'start_trial'];
                     if (!safe.includes(a.type))
                         throw bad('Unknown action.');
-                    const key = ['sale', 'purchase', 'bill_import'].includes(a.type) ? a.type + ':' + a.id : null;
+                    const key = ['sale', 'purchase', 'bill_import', 'supplier_return', 'supplier_payment', 'purchase_settlement'].includes(a.type) ? a.type + ':' + a.id : null;
                     const hash = digest(JSON.stringify(a));
                     if (key) {
                         const previous = await db.prepare('SELECT digest FROM commands WHERE vendor_id=? AND key=?').get(selected, key);
