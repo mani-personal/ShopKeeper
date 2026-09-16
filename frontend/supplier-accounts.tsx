@@ -1,0 +1,37 @@
+import {useRef,useState} from 'react';
+import {State,money,supplierAccounts,supplierKey} from '@/lib/store';
+export function SupplierAccounts({s,busy,save}:{s:State;busy:boolean;save:(a:any)=>Promise<unknown>}){
+ const accounts=supplierAccounts(s);
+ const [supplier,setSupplier]=useState(accounts[0]?.name??''),[purchaseId,setPurchaseId]=useState('');
+ const [direction,setDirection]=useState('payment');
+ const paymentId=useRef(crypto.randomUUID()),returnId=useRef(crypto.randomUUID()),reconcileId=useRef(crypto.randomUUID());
+ const account=accounts.find(a=>a.key===supplierKey(supplier));
+ const purchases=s.purchases.filter(p=>supplierKey(p.supplier)===supplierKey(supplier));
+ const purchase=purchases.find(p=>p.id===purchaseId);
+ const returned=(s.supplierReturns??[]).filter(r=>r.purchaseId===purchaseId).reduce((t,r)=>t+r.qty,0);
+ function changeSupplier(value:string){setSupplier(value);setPurchaseId('');paymentId.current=crypto.randomUUID();returnId.current=crypto.randomUUID()}
+ return <div className="supplier-accounts">
+ <section className="panel table-scroll"><table className="ledger-table"><thead><tr>{['Supplier','Known purchases','Paid','Return credits','Refunds received','You owe','Supplier owes / credit','Unknown purchases'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{accounts.map(a=><tr key={a.key}><td><button className="text-button" onClick={()=>changeSupplier(a.name)}>{a.name}</button></td><td>{money(a.purchases)}</td><td>{money(a.paid)}</td><td>{money(a.credits)}</td><td>{money(a.refunded)}</td><td>{money(a.pending)}</td><td>{money(a.credit)}</td><td>{a.unknown}</td></tr>)}</tbody></table>{!accounts.length&&<p className="empty-inline">Add a supplier or receive stock to start tracking balances.</p>}</section>
+ <p className="muted small">Balances include recorded purchases, return credits, payments and refunds. Unknown older purchases are excluded until you enter their actual payment status.</p>
+ <label className="form">Supplier<select aria-label="Supplier" value={supplier} onChange={e=>changeSupplier(e.target.value)}><option value="">Choose supplier</option>{accounts.map(a=><option key={a.key} value={a.name}>{a.name}</option>)}</select></label>
+ {account&&<div className="account-forms">
+ <section className="panel"><h2>Record payment / refund</h2><form className="form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);if(await save({type:'supplier_payment',id:paymentId.current,supplier,direction,amount:Number(f.get('amount')),reference:f.get('reference')})){form.reset();paymentId.current=crypto.randomUUID()}}}>
+ <label>Transaction<select aria-label="Transaction" value={direction} onChange={e=>setDirection(e.target.value)}><option value="payment">Paid to supplier</option><option value="refund">Refund received from supplier</option></select></label>
+ <p>Available {direction==='payment'?'payable':'credit'}: {money(direction==='payment'?account.pending:account.credit)}</p>
+ {account.unknown>0&&<div className="notice">Reconcile {account.unknown} older purchase(s) before recording payments.</div>}
+ <label>Amount (₹)<input name="amount" type="number" min=".01" step=".01" max={direction==='payment'?account.pending:account.credit} required/></label><label>Payment reference / note<input name="reference" maxLength={200}/></label>
+ <button className="btn primary" disabled={busy||account.unknown>0}>Save transaction</button></form></section>
+ <section className="panel"><h2>Return goods to supplier</h2><form className="form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);if(await save({type:'supplier_return',id:returnId.current,purchaseId,qty:Number(f.get('qty')),reason:f.get('reason')})){form.reset();returnId.current=crypto.randomUUID()}}}>
+ <label>Original purchase<select aria-label="Original purchase" value={purchaseId} onChange={e=>{setPurchaseId(e.target.value);returnId.current=crypto.randomUUID()}} required><option value="">Choose purchase</option>{purchases.filter(p=>p.paidAmount!==undefined).map(p=><option key={p.id} value={p.id}>{p.product} · {new Date(p.date).toLocaleDateString('en-IN')} · {p.qty} units · {p.id.slice(0,8)}</option>)}</select></label>
+ {purchase&&<p>{purchase.qty-returned} units not yet returned. Credit uses the original purchase cost.</p>}
+ <label>Quantity to return<input name="qty" type="number" min="1" max={purchase?purchase.qty-returned:0} step="1" required/></label><label>Reason<input name="reason" required maxLength={199} placeholder="Damaged, expired, incorrect supply…"/></label>
+ <p className="muted small">Reduces stock and creates a supplier credit. Record cash received separately as a refund.</p><button className="btn primary" disabled={busy||!purchase}>Save return</button></form></section>
+ </div>}
+ {purchases.some(p=>p.paidAmount===undefined)&&<section className="panel"><h2>Reconcile older purchases</h2><p>Enter the total paid against each older purchase. Choose zero if still fully unpaid.</p>{purchases.filter(p=>p.paidAmount===undefined).map(p=><form className="form reconcile-row" key={p.id} onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(await save({type:'purchase_settlement',id:reconcileId.current,purchaseId:p.id,paidAmount:Number(f.get('paid'))}))reconcileId.current=crypto.randomUUID()}}><span>{p.product} · {new Date(p.date).toLocaleDateString('en-IN')} · Total {money(p.total)}</span><label>Previously paid (₹)<input name="paid" type="number" min="0" max={p.total} step=".01" required/></label><button className="btn" disabled={busy}>Confirm payment status</button></form>)}</section>}
+ <section className="panel table-scroll"><h2>Supplier activity {supplier&&'— '+supplier}</h2><table className="ledger-table"><thead><tr><th>Date</th><th>Type</th><th>Details</th><th>Amount</th></tr></thead><tbody>{[
+ ...s.purchases.map(p=>({id:'buy-'+p.id,date:p.date,supplier:p.supplier,type:'Purchase',details:p.product+' × '+p.qty+(p.paidAmount===undefined?' · payment unknown':' · initially paid '+money(p.paidAmount)),amount:p.total})),
+ ...(s.supplierReturns??[]).map(r=>({id:'return-'+r.id,date:r.date,supplier:r.supplier,type:'Return credit',details:r.product+' × '+r.qty+' · '+r.reason,amount:r.amount})),
+ ...(s.supplierPayments??[]).map(p=>({...p,type:p.direction==='payment'?'Payment':'Refund received',details:p.reference}))
+ ].filter(x=>!supplier||supplierKey(x.supplier)===supplierKey(supplier)).sort((a,b)=>b.date.localeCompare(a.date)).map(x=><tr key={x.id}><td>{new Date(x.date).toLocaleString('en-IN')}</td><td>{x.type}</td><td>{x.details}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></section>
+ </div>;
+}
