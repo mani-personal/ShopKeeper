@@ -1,0 +1,16 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {receiptMarkup,receiptCSS} from '../server/domain/receipt.mjs';
+const sale={id:'sale-1',date:'2026-09-17T00:00:00Z',customer:'A < B',payment:'Cash',items:[{name:'Soap <script>alert(1)</script>',qty:2,unit:'piece',price:120}],discount:25,productDiscount:20,billDiscount:5,total:215};
+test('Receipts escape names and present separate discounts without changing totals',()=>{
+ const html=receiptMarkup(sale,{name:'My & Store',address:'Hosur\nTamil Nadu',phone:'123'});
+ assert(!html.includes('<script>'));assert(html.includes('&lt;script&gt;'));assert(html.includes('My &amp; Store'));
+ assert(html.includes('240.00'));assert(html.includes('-20.00'));assert(html.includes('-5.00'));assert(html.includes('215.00'));
+ assert(html.includes('receipt-lines'));assert(html.includes('numeric'));
+});
+test('Receipt layouts use printable widths without fixed-position content',()=>{
+ for(const paper of ['58','80','A4']){
+  const css=receiptCSS(paper);
+  assert(!css.includes('position:fixed'));assert(css.includes('table-layout:fixed'));assert(css.includes('break-inside:avoid'));
+ }
+ assert(receiptCSS('58').includes('48mm'));assert(receiptCSS('80').includes('72mm'));assert(receiptCSS('A4').includes('186mm'));
+});
