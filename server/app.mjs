@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { transaction } from './db.mjs';
-import { email, hashPassword, verifyPassword, readSession, startSession, clearSession, limit, digest, token, allowedVendors, requireVendor, requireOwner } from './security.mjs';
+import { email, hashPassword, verifyPassword, readSession, startSession, clearSession, limit, digest, token, allowedVendors, requireVendor, requireOwner, requireActiveAccount, suspensionError } from './security.mjs';
 import { initial, mutate, isLow } from './domain/store.mjs';
 import { businessTypes } from './domain/vendors.mjs';
 const bad = (message, status = 400) => Object.assign(Error(message), { status });
@@ -24,18 +24,18 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
     app.use(express.json({ limit: '1mb' }));
     app.get('/api/health', async (_req, res) => { await db.prepare('SELECT 1').get(); res.json({ status: 'ok' }); });
     app.post('/api/auth/login', async (req, res) => { const mail = email(req.body.email); await limit(db, 'login-ip:' + digest(req.ip || ''), 30); await limit(db, 'login-email:' + digest(mail), 10); const user = await db.prepare('SELECT * FROM users WHERE email=?').get(mail); const dummy = 'scrypt:00000000000000000000000000000000:' + ('00'.repeat(64)); const valid = await verifyPassword(req.body.password, user?.password_hash ?? dummy); if (!user || !valid)
-        throw bad('Email or password is incorrect.', 401); res.json(await startSession(db, res, user, secure)); });
+        throw bad('Email or password is incorrect.', 401); await requireActiveAccount(db,user); res.json(await startSession(db, res, user, secure)); });
     app.post('/api/auth/activate', async (req, res) => { await limit(db, 'activation:' + digest(req.ip || ''), 20); const mail = email(req.body.email); if (typeof req.body.token !== 'string' || req.body.token.length > 200)
         throw bad('Invalid activation token.'); const key = digest(req.body.token.trim()); const invite = await db.prepare("SELECT * FROM tokens WHERE hash=? AND kind='invite' AND email=? AND expires>?").get(key, mail, Date.now()); if (!invite)
         throw bad('Activation code is invalid or expired.', 400); const existing = await db.prepare('SELECT * FROM users WHERE email=?').get(mail); if (existing)
-        throw bad('This account already exists. Sign in, then redeem the code under Account.', 409); const hash = await hashPassword(req.body.password); const id = randomUUID(); await transaction(db, async () => { await db.prepare('SELECT id FROM vendors WHERE id=? FOR UPDATE').get(invite.vendor_id); const current = await db.prepare("SELECT * FROM tokens WHERE hash=? AND expires>? FOR UPDATE").get(key, Date.now()); if (!current)
+        throw bad('This account already exists. Sign in, then redeem the code under Account.', 409); const hash = await hashPassword(req.body.password); const id = randomUUID(); await transaction(db, async () => { const store=await db.prepare('SELECT suspended FROM vendors WHERE id=? FOR UPDATE').get(invite.vendor_id); if(store?.suspended)throw suspensionError(); const current = await db.prepare("SELECT * FROM tokens WHERE hash=? AND expires>? FOR UPDATE").get(key, Date.now()); if (!current)
         throw bad('Activation code was already used.'); await db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?)').run(id, mail, hash, 'vendor', mail.split('@')[0], Date.now()); await db.prepare('INSERT INTO memberships VALUES(?,?)').run(id, current.vendor_id); await db.prepare('DELETE FROM tokens WHERE hash=?').run(key); }); res.json(await startSession(db, res, { id, email: mail, role: 'vendor', name: mail.split('@')[0] }, secure)); });
     app.post('/api/auth/reset', async (req, res) => { await limit(db, 'reset:' + digest(req.ip || ''), 20); const mail = email(req.body.email); if (typeof req.body.token !== 'string' || req.body.token.length > 200)
         throw bad('Invalid reset token.'); const key = digest(req.body.token.trim()); const record = await db.prepare("SELECT * FROM tokens WHERE hash=? AND kind='reset' AND email=? AND expires>?").get(key, mail, Date.now()); if (!record)
         throw bad('Reset code is invalid or expired.'); const hash = await hashPassword(req.body.password); await transaction(db, async () => { if (!await db.prepare('SELECT 1 FROM tokens WHERE hash=? AND expires>? FOR UPDATE').get(key, Date.now()))
         throw bad('Reset code was already used.'); await db.prepare('UPDATE users SET password_hash=? WHERE email=?').run(hash, mail); await db.prepare('DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE email=?)').run(mail); await db.prepare("DELETE FROM tokens WHERE email=? AND kind='reset'").run(mail); }); res.json({ ok: true }); });
     app.use('/api', async (req, res, next) => { const user = await readSession(db, req); if (!user)
-        return res.status(401).json({ error: 'Sign in to continue.' }); req.user = user; if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.get('x-csrf-token') !== user.csrf)
+        return res.status(401).json({ error: 'Sign in to continue.' }); req.user = user; if(req.path!=='/auth/logout')await requireActiveAccount(db,user); if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.get('x-csrf-token') !== user.csrf)
         return res.status(403).json({ error: 'Session verification failed. Refresh and try again.' }); next(); });
     app.get('/api/auth/me', (req, res) => res.json({ user: { id: req.user.id, email: req.user.email, role: req.user.role, name: req.user.name }, csrf: req.user.csrf }));
     app.post('/api/auth/logout', async (req, res) => { await clearSession(db, res, req, secure); res.json({ ok: true }); });
@@ -43,9 +43,10 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
         throw bad('Current password is incorrect.', 403); const hash = await hashPassword(req.body.password); await transaction(db, async () => { await db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, user.id); await db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id); }); res.json(await startSession(db, res, user, secure)); });
     async function access() { return { members: await db.prepare('SELECT u.id as "userId",u.email,m.vendor_id as "vendorId" FROM memberships m JOIN users u ON u.id=m.user_id').all(), invites: await db.prepare('SELECT email,vendor_id as "vendorId",expires FROM tokens WHERE kind=\'invite\' AND expires>?').all(Date.now()) }; }
     async function payload(user, id) { const rows = await allowedVendors(db, user); if (id)
-        await requireVendor(db, user, id); const row = rows.find(v => v.id === id) ?? rows[0]; const vendors = rows.map(v => { const s = JSON.parse(v.data); return { id: v.id, name: s.settings.name, owner: v.owner_name, type: v.business_type, demo: s.demo, products: s.products.length, sales: s.sales.length, revenue: s.sales.reduce((n, x) => n + x.total, 0), low: s.products.filter(p => isLow(p, s)).length, phone: s.settings.phone }; }); return { state: row ? JSON.parse(row.data) : initial(), version: row?.version ?? 0, vendorId: row?.id ?? '', vendors, role: user.role, email: user.email, ...(user.role === 'owner' ? { access: await access() } : {}) }; }
+        await requireVendor(db, user, id); const row = rows.find(v => v.id === id) ?? rows[0]; const vendors = rows.map(v => { const s = JSON.parse(v.data); return { id: v.id, name: s.settings.name, owner: v.owner_name, type: v.business_type, demo: s.demo, products: s.products.length, sales: s.sales.length, revenue: s.sales.reduce((n, x) => n + x.total, 0), low: s.products.filter(p => isLow(p, s)).length, phone: s.settings.phone, suspended:v.suspended, suspensionReason:v.suspension_reason, accessChangedAt:v.access_changed_at }; }); return { state: row ? JSON.parse(row.data) : initial(), version: row?.version ?? 0, vendorId: row?.id ?? '', vendors, role: user.role, email: user.email, ...(user.role === 'owner' ? { access: await access() } : {}) }; }
     app.get('/api/store', async (req, res) => res.json(await payload(req.user, typeof req.query.vendor === 'string' ? req.query.vendor : undefined)));
     app.get('/api/vendors', async (req, res) => res.json({ vendors: (await payload(req.user)).vendors }));
+    app.get('/api/vendors/:id/access', async (req,res)=>{await requireVendor(db,req.user,req.params.id);res.json({ok:true})});
     app.get('/api/vendors/:id/products', async (req, res) => { const s = JSON.parse((await requireVendor(db, req.user, req.params.id)).data); const q = String(req.query.q ?? '').toLowerCase(); res.json({ products: s.products.filter(p => (p.name + ' ' + p.barcode).toLowerCase().includes(q)) }); });
     app.get('/api/vendors/:id/barcode/:code', async (req, res) => { const s = JSON.parse((await requireVendor(db, req.user, req.params.id)).data), product = s.products.find(p => p.barcode === req.params.code); if (!product)
         throw bad('Product not found.', 404); res.json({ product }); });
@@ -74,7 +75,7 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
                 const hash = digest(a.code.trim());
                 const candidate = await db.prepare("SELECT * FROM tokens WHERE hash=? AND email=? AND kind='invite' AND expires>?").get(hash, user.email, Date.now());
                 if (!candidate) throw bad('Code is invalid, expired or assigned to another account.');
-                await db.prepare('SELECT id FROM vendors WHERE id=? FOR UPDATE').get(candidate.vendor_id);
+                const targetStore=await db.prepare('SELECT suspended FROM vendors WHERE id=? FOR UPDATE').get(candidate.vendor_id); if(targetStore?.suspended)throw suspensionError();
                 const invite = await db.prepare("SELECT * FROM tokens WHERE hash=? AND email=? AND kind='invite' AND expires>? FOR UPDATE").get(hash, user.email, Date.now());
                 if (!invite)
                     throw bad('Code is invalid, expired or assigned to another account.');
@@ -84,7 +85,14 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
             }
             else {
                 const vendor = await requireVendor(db, user, selected);
-                if (a.type === 'invite_vendor') {
+                if (a.type === 'vendor_suspend' || a.type === 'vendor_reactivate') {
+                    requireOwner(user);
+                    if(typeof a.expectedSuspended!=='boolean'||a.expectedSuspended!==vendor.suspended)throw bad('Store access status changed. Refresh and try again.',409);
+                    const suspended=a.type==='vendor_suspend';
+                    const reason=suspended?'Subscription payment pending':'';
+                    await db.prepare('UPDATE vendors SET suspended=?,suspension_reason=?,access_changed_at=?,access_changed_by=?,version=version+1 WHERE id=?').run(suspended,reason,Date.now(),user.id,selected);
+                }
+                else if (a.type === 'invite_vendor') {
                     requireOwner(user);
                     const mail = email(a.email);
                     code = token();
@@ -152,6 +160,6 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
         app.get('/{*path}', (_req, res) => res.sendFile(resolve(root, 'index.html')));
     }
     app.use((err, req, res, _next) => { if (!err.status || err.status >= 500)
-        console.error('Request failed', req.method, req.path, err.message); res.status(err.status ?? 500).json({ error: err.status ? err.message : 'Could not complete the request. Please retry.' }); });
+        console.error('Request failed', req.method, req.path, err.message); res.status(err.status ?? 500).json({ error: err.status ? err.message : 'Could not complete the request. Please retry.', ...(err.code==='VENDOR_SUSPENDED'?{code:err.code}:{}) }); });
     return app;
 }
