@@ -33,6 +33,39 @@ test('Authentication, vendor isolation, stock transactions, OCR import and accou
  assert.equal((await call('/api/store',{type:'start_trial',vendorId},a)).status,200);
  r=await call('/api/store',{type:'subscription_request',vendorId,plan:'yearly'},a);assert.equal(r.status,200);assert.equal(r.data.state.subscriptionRequest.plan,'yearly');
  r=await call('/api/store',{type:'settings',vendorId,name:'Vendor A',phone:'',address:'',lowPercent:25},a);assert.equal(r.status,200);assert.equal(r.data.state.settings.lowPercent,25);assert.equal((await call('/api/store',{type:'settings',vendorId,name:'A',phone:'',address:'',lowPercent:101},a)).status,400);
+
+ // Suspension is administrator-only, retains data, and blocks existing sessions.
+ const retained=(await db.prepare('SELECT data FROM vendors WHERE id=?').get(vendorId)).data;
+ assert.equal((await call('/api/store',{type:'vendor_suspend',vendorId,expectedSuspended:false},a)).status,403);
+ r=await call('/api/store',{type:'vendor_suspend',vendorId,expectedSuspended:false},owner);assert.equal(r.status,200);assert.equal(r.data.vendors.find(v=>v.id===vendorId).suspended,true);
+ assert.equal((await call('/api/store',{type:'vendor_reactivate',vendorId,expectedSuspended:false},owner)).status,409);
+ for(const path of ['/api/auth/me','/api/store','/api/vendors','/api/vendors/'+vendorId+'/products','/api/vendors/'+vendorId+'/barcode/8901234567890','/api/vendors/'+vendorId+'/access']){
+  const denied=await call(path,undefined,a);assert.equal(denied.status,403,path);assert.equal(denied.data.code,'VENDOR_SUSPENDED');
+ }
+ assert.equal((await call('/api/store',{type:'expense',vendorId,name:'Blocked',amount:1},a)).status,403);
+ assert.equal((await call('/api/vendors/'+vendorId+'/actions',{type:'expense',name:'Blocked',amount:1},a)).status,403);
+ r=await call('/api/auth/login',{email:'a@example.test',password:'Vendor-A-password-123'});assert.equal(r.status,403);assert.equal(r.cookie,undefined);
+ assert.equal((await call('/api/store?vendor='+vendorId,undefined,owner)).status,200);
+ assert.equal((await db.prepare('SELECT data FROM vendors WHERE id=?').get(vendorId)).data,retained);
+ // A second active store remains accessible without leaking suspended data.
+ const uid=(await db.prepare('SELECT id FROM users WHERE email=?').get('a@example.test')).id;
+ await db.prepare('INSERT INTO memberships VALUES(?,?)').run(uid,'main');
+ r=await call('/api/store',undefined,a);assert.equal(r.status,200);assert.deepEqual(r.data.vendors.map(v=>v.id),['main']);
+ assert.equal((await call('/api/store?vendor='+vendorId,undefined,a)).status,403);
+ assert.equal((await call('/api/vendors/'+vendorId+'/products',undefined,a)).status,403);
+ assert.equal((await call('/api/store',{type:'vendor_reactivate',vendorId,expectedSuspended:true},a)).status,403);
+ assert.equal((await call('/api/auth/login',{email:'a@example.test',password:'Vendor-A-password-123'})).status,200);
+ await db.prepare('DELETE FROM memberships WHERE user_id=? AND vendor_id=?').run(uid,'main');
+ r=await call('/api/store',{type:'invite_vendor',vendorId,email:'pending@example.test'},owner);
+ const suspendedInvite=r.data.accessCode;
+ r=await call('/api/auth/activate',{email:'pending@example.test',password:'Pending-password-123',token:suspendedInvite});assert.equal(r.status,403);
+ assert.equal(await db.prepare('SELECT id FROM users WHERE email=?').get('pending@example.test'),undefined);
+ r=await call('/api/store',{type:'vendor_reactivate',vendorId,expectedSuspended:true},owner);assert.equal(r.status,200);
+ assert.equal((await db.prepare('SELECT data FROM vendors WHERE id=?').get(vendorId)).data,retained);
+ assert.equal((await call('/api/auth/login',{email:'a@example.test',password:'Vendor-A-password-123'})).status,200);
+ assert.equal((await call('/api/store',undefined,a)).status,200);
+ const audit=await db.prepare("SELECT action FROM audit WHERE vendor_id=? AND action IN ('vendor_suspend','vendor_reactivate') ORDER BY id").all(vendorId);
+ assert.deepEqual(audit.map(x=>x.action),['vendor_suspend','vendor_reactivate']);
  r=await call('/api/store',{type:'reset_vendor_password',vendorId,email:'a@example.test'},owner);assert.equal(r.status,200);const reset=r.data.accessCode;assert.equal((await call('/api/auth/reset',{email:'a@example.test',token:reset,password:'Vendor-new-password-123'})).status,200);assert.equal((await call('/api/store',undefined,a)).status,401);const newA=await login('a@example.test','Vendor-new-password-123');
  assert.equal((await call('/api/store',{type:'revoke_access',vendorId,email:'a@example.test'},owner)).status,200);assert.equal((await call('/api/store?vendor='+vendorId,undefined,newA)).status,403);assert.equal((await call('/api/store',undefined,newA)).data.vendors.length,0);
  assert.equal((await call('/api/auth/logout',{},owner)).status,200);assert.equal((await call('/api/store',undefined,owner)).status,401);
