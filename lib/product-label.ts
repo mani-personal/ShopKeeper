@@ -28,8 +28,18 @@ export function parseProductCode(raw:string):LabelDraft{
  return {barcode:text,source:'barcode'};
 }
 export function parsePrintedMRP(text:string):number|undefined{
- // Deliberately anchored to MRP to avoid mistaking unit price, dates or quantities.
- const hits=[...text.matchAll(/\bM\s*\.?\s*R\s*\.?\s*P\s*\.?\s*(?:\([^\n)]{0,45}\))?\s*[:=\-]?\s*(?:₹|RS\.?|INR)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi)];
- const values=[...new Set(hits.map(m=>amount(m[1])).filter((n):n is number=>n!==undefined))];
+ const values=printedMRPCandidates(text);
  return values.length===1?values[0]:undefined;
+}
+
+/** Suggestions only: packaging also contains manufacturers and advertising. */
+export function productNameSuggestions(text:string):string[]{
+ const excluded=/\b(?:mrp|m\s*\.\s*r\s*\.\s*p|maximum retail|unit sale|price|inclusive|taxes|manufactur\w*|marketed|distributed|ingredients|directions|how to|caution|warning|customer|consumer|care cell|batch|expiry|best before|packed|address|www|https|email|recycl\w*|net quantity|net weight|made in|mfd|licence|license)\b/i;
+ const lines=text.split(/\r?\n/).map(s=>s.replace(/^[^\p{L}\p{N}]+/u,'').replace(/\s+/g,' ').trim()).filter(s=>s.length>=3&&s.length<=100&&/[a-z]{3}/i.test(s)&&!excluded.test(s)&&!/[@:;]|\d{6}/.test(s));
+ return [...new Set(lines)].slice(0,12);
+}
+export function printedMRPCandidates(text:string):number[]{
+ const normalized=text.replace(/maximum\s+retail\s+price/gi,'MRP');
+ const pattern=/\bM\s*\.?\s*R\s*\.?\s*P\s*\.?\s*(?:\([^)]{0,60}\))?\s*[:=\-]?\s*(?:₹|RS\.?|INR)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
+ return [...new Set([...normalized.matchAll(pattern)].map(m=>amount(m[1])).filter((n):n is number=>n!==undefined))];
 }
