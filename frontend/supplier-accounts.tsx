@@ -1,26 +1,27 @@
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {State,money,supplierAccounts,supplierKey} from '@/lib/store';
 export function SupplierAccounts({s,busy,save}:{s:State;busy:boolean;save:(a:any)=>Promise<unknown>}){
  const accounts=supplierAccounts(s);
  const [supplier,setSupplier]=useState(accounts[0]?.name??''),[purchaseId,setPurchaseId]=useState('');
- const [direction,setDirection]=useState('payment');
+ const [direction,setDirection]=useState('payment'),[amount,setAmount]=useState(''),[reference,setReference]=useState(''),[message,setMessage]=useState('');
+ useEffect(()=>{if(!supplier&&accounts.length)setSupplier(accounts[0].name)},[supplier,accounts.map(a=>a.key).join('|')]);
  const paymentId=useRef(crypto.randomUUID()),returnId=useRef(crypto.randomUUID()),reconcileId=useRef(crypto.randomUUID());
  const account=accounts.find(a=>a.key===supplierKey(supplier));
  const purchases=s.purchases.filter(p=>supplierKey(p.supplier)===supplierKey(supplier));
  const purchase=purchases.find(p=>p.id===purchaseId);
  const returned=(s.supplierReturns??[]).filter(r=>r.purchaseId===purchaseId).reduce((t,r)=>t+r.qty,0);
- function changeSupplier(value:string){setSupplier(value);setPurchaseId('');paymentId.current=crypto.randomUUID();returnId.current=crypto.randomUUID()}
+ function changeSupplier(value:string){setSupplier(value);setPurchaseId('');setAmount('');setReference('');setMessage('');paymentId.current=crypto.randomUUID();returnId.current=crypto.randomUUID()}
  return <div className="supplier-accounts">
  <section className="panel table-scroll"><table className="ledger-table"><thead><tr>{['Supplier','Known purchases','Paid','Return credits','Refunds received','You owe','Supplier owes / credit','Unknown purchases'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{accounts.map(a=><tr key={a.key}><td><button className="text-button" onClick={()=>changeSupplier(a.name)}>{a.name}</button></td><td>{money(a.purchases)}</td><td>{money(a.paid)}</td><td>{money(a.credits)}</td><td>{money(a.refunded)}</td><td>{money(a.pending)}</td><td>{money(a.credit)}</td><td>{a.unknown}</td></tr>)}</tbody></table>{!accounts.length&&<p className="empty-inline">Add a supplier or receive stock to start tracking balances.</p>}</section>
  <p className="muted small">Balances include recorded purchases, return credits, payments and refunds. Unknown older purchases are excluded until you enter their actual payment status.</p>
  <label className="form">Supplier<select aria-label="Supplier" value={supplier} onChange={e=>changeSupplier(e.target.value)}><option value="">Choose supplier</option>{accounts.map(a=><option key={a.key} value={a.name}>{a.name}</option>)}</select></label>
  {account&&<div className="account-forms">
- <section className="panel"><h2>Record payment / refund</h2><form className="form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);if(await save({type:'supplier_payment',id:paymentId.current,supplier,direction,amount:Number(f.get('amount')),reference:f.get('reference')})){form.reset();paymentId.current=crypto.randomUUID()}}}>
- <label>Transaction<select aria-label="Transaction" value={direction} onChange={e=>setDirection(e.target.value)}><option value="payment">Paid to supplier</option><option value="refund">Refund received from supplier</option></select></label>
+ <section className="panel"><h2>Record payment / refund</h2><form className="form" onSubmit={async e=>{e.preventDefault();setMessage('');const value=Number(amount),limit=direction==='payment'?account.pending:account.credit;if(!Number.isFinite(value)||value<=0||value>limit){setMessage('Enter an amount greater than zero and no more than '+money(limit));return}if(await save({type:'supplier_payment',id:paymentId.current,supplier,direction,amount:value,reference})){setAmount('');setReference('');paymentId.current=crypto.randomUUID();setMessage('Transaction saved. Supplier balance updated.')}else setMessage('Could not save. Check the error notification and reconcile any unknown purchases.')}}>
+ <label>Transaction<select aria-label="Transaction" value={direction} onChange={e=>{setDirection(e.target.value);setAmount('');setMessage('');paymentId.current=crypto.randomUUID()}}><option value="payment">Paid to supplier</option><option value="refund">Refund received from supplier</option></select></label>
  <p>Available {direction==='payment'?'payable':'credit'}: {money(direction==='payment'?account.pending:account.credit)}</p>
  {account.unknown>0&&<div className="notice">Reconcile {account.unknown} older purchase(s) before recording payments.</div>}
- <label>Amount (₹)<input name="amount" type="number" min=".01" step=".01" max={direction==='payment'?account.pending:account.credit} required/></label><label>Payment reference / note<input name="reference" maxLength={200}/></label>
- <button className="btn primary" disabled={busy||account.unknown>0}>Save transaction</button></form></section>
+ <label>Amount (₹)<input name="amount" value={amount} onChange={e=>{setAmount(e.target.value);paymentId.current=crypto.randomUUID()}} type="number" min=".01" step=".01" max={direction==='payment'?account.pending:account.credit} required/></label><label>Payment reference / note<input name="reference" value={reference} onChange={e=>{setReference(e.target.value);paymentId.current=crypto.randomUUID()}} maxLength={200}/></label>
+ <button className="btn primary" disabled={busy||account.unknown>0||(direction==='payment'?account.pending:account.credit)<=0}>Save transaction</button>{(direction==='payment'?account.pending:account.credit)<=0&&<p className="notice">{direction==='payment'?'No payment is due. Record an unpaid purchase first.':'No refund credit is available. Record a supplier return or check the supplier balance.'}</p>}{message&&<p role="status">{message}</p>}</form></section>
  <section className="panel"><h2>Return goods to supplier</h2><form className="form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);if(await save({type:'supplier_return',id:returnId.current,purchaseId,qty:Number(f.get('qty')),reason:f.get('reason')})){form.reset();returnId.current=crypto.randomUUID()}}}>
  <label>Original purchase<select aria-label="Original purchase" value={purchaseId} onChange={e=>{setPurchaseId(e.target.value);returnId.current=crypto.randomUUID()}} required><option value="">Choose purchase</option>{purchases.filter(p=>p.paidAmount!==undefined).map(p=><option key={p.id} value={p.id}>{p.product} · {new Date(p.date).toLocaleDateString('en-IN')} · {p.qty} units · {p.id.slice(0,8)}</option>)}</select></label>
  {purchase&&<p>{purchase.qty-returned} units not yet returned. Credit uses the original purchase cost.</p>}
