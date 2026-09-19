@@ -1,10 +1,10 @@
 import {useState} from 'react';
 import {State,financialSummary,money,roundMoney,saleCost,supplierAccounts} from '@/lib/store';
-export function FinanceCards({s,from='',to='9999-12-31'}:{s:State;from?:string;to?:string}){
+export function FinanceCards({s,from='',to='9999-12-31',dashboard=false}:{s:State;from?:string;to?:string;dashboard?:boolean}){
  const f=financialSummary(s,from,to);
  return <><div className="metrics">{[
   ['Net sales',money(f.revenue),f.sales.length+' bills · '+f.units+' units, after discounts'],
-  ['Cost of goods sold',money(f.cost),'Cost recorded when each sale was made'],
+  dashboard?['Expenses',money(f.expenses),'Expenses recorded in this period']:['Cost of goods sold',money(f.cost),'Cost recorded when each sale was made'],
   ['Gross profit',money(f.gross),f.margin.toFixed(2)+'% margin on net sales'],
   ['Profit after expenses',money(f.net),money(f.expenses)+' recorded expenses']
  ].map(([label,value,note])=><div className="metric" key={label}><span>{label}</span><strong>{value}</strong><small>{note}</small></div>)}</div><p className="muted small">Gross profit = net sales − cost of goods sold. Profit after expenses = gross profit − recorded expenses. These figures depend on entered costs and expenses; tax is not calculated.</p></>;
