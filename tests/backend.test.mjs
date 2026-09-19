@@ -32,6 +32,12 @@ test('Authentication, vendor isolation, stock transactions, OCR import and accou
  assert.equal((await call('/api/store',{type:'supplier_payment',vendorId,id:'excess-payment',supplier:'API Supplier',direction:'payment',amount:1},a)).status,400);
  assert.equal((await call('/api/store',{type:'start_trial',vendorId},a)).status,200);
  r=await call('/api/store',{type:'subscription_request',vendorId,plan:'yearly'},a);assert.equal(r.status,200);assert.equal(r.data.state.subscriptionRequest.plan,'yearly');
+
+ r=await call('/api/store',{type:'purchase',vendorId,id:'payment-fixture',product:pid,qty:2,cost:30,supplier:'Payment Test',paidAmount:0},a);assert.equal(r.status,200);
+ const pay={type:'supplier_payment',vendorId,id:'pay-success',supplier:'Payment Test',direction:'payment',amount:60,reference:'UPI payment'};
+ assert.equal((await call('/api/store',pay,a)).status,200);assert.equal((await call('/api/store',pay,a)).status,200);
+ assert.equal((await call('/api/store',{type:'supplier_return',vendorId,id:'refund-fixture',purchaseId:'payment-fixture',qty:1,reason:'Damaged'},a)).status,200);
+ r=await call('/api/store',{type:'supplier_payment',vendorId,id:'refund-success',supplier:'Payment Test',direction:'refund',amount:30,reference:'Refund received'},a);assert.equal(r.status,200);assert.equal(r.data.state.supplierPayments.filter(p=>p.supplier==='Payment Test').length,2);
  r=await call('/api/store',{type:'settings',vendorId,name:'Vendor A',phone:'',address:'',lowPercent:25},a);assert.equal(r.status,200);assert.equal(r.data.state.settings.lowPercent,25);assert.equal((await call('/api/store',{type:'settings',vendorId,name:'A',phone:'',address:'',lowPercent:101},a)).status,400);
 
  // Suspension is administrator-only, retains data, and blocks existing sessions.
