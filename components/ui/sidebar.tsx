@@ -187,6 +187,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          onClick={event=>{if((event.target as Element).closest('[data-sidebar="menu-button"]'))setOpenMobile(false)}}
           className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {
