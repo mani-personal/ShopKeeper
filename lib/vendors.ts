@@ -3,7 +3,7 @@ import type {State,Product} from './store';
 export const businessTypes=['General store','Grocery & supermarket','Stationery & books','Hardware & electrical','Fashion & accessories','Electronics','Other'];
 export type Vendor={id:string;owner:string;type:string;state:State};
 export type VendorBook={format:2;vendors:Vendor[];ownerUserId?:string;members?:{userId:string;vendorId:string;email:string}[];invites?:{hash:string;email:string;vendorId:string;expires:number}[]};
-export type VendorSummary={suspended?:boolean;suspensionReason?:string;accessChangedAt?:number;id:string;name:string;owner:string;type:string;demo:boolean;products:number;sales:number;revenue:number;low:number;phone:string};
+export type VendorSummary={validUntil?:number;daysRemaining?:number;suspended?:boolean;suspensionReason?:string;accessChangedAt?:number;id:string;name:string;owner:string;type:string;demo:boolean;products:number;sales:number;revenue:number;low:number;phone:string};
 const catalogs=[
 [['Classmate Notebook','Notebooks',65,45,'180 pages'],['Apsara Pencils','Writing',60,40,'10 pack'],['Cello Ball Pens','Writing',100,70,'10 pack'],['Fevicol Glue','Art supplies',45,30,'100 g'],['A4 Copier Paper','Paper',280,220,'500 sheets'],['Geometry Box','School supplies',150,105,'piece'],['Watercolour Set','Art supplies',180,125,'12 colours'],['Document Folder','Office supplies',40,25,'piece']],
 [['LED Bulb 9W','Electrical',120,85,'piece'],['PVC Insulation Tape','Electrical',25,14,'roll'],['Claw Hammer','Hand tools',350,245,'piece'],['Screwdriver Set','Hand tools',220,150,'6 pieces'],['Wall Plugs','Fasteners',50,30,'50 pack'],['Extension Board','Electrical',480,340,'4 sockets'],['Measuring Tape','Hand tools',130,85,'5 metres'],['Brass Padlock','Locks',290,200,'50 mm']]
