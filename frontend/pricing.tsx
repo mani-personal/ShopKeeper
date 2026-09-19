@@ -1,25 +1,29 @@
-import {useState} from 'react';
-import {State,trialDaysLeft} from '@/lib/store';
-import {ThemeToggle} from './theme';
-export function Pricing({s,busy=false,save}:{s?:State;busy?:boolean;save?:(a:any)=>Promise<unknown>}){
- const [message,setMessage]=useState('');
- const start=s?.trialStartedAt?new Date(s.trialStartedAt).getTime():undefined;
- const remaining=s?trialDaysLeft(s):10;
- async function choose(plan:'trial'|'monthly'|'yearly'){
-  if(!save){location.href=plan==='trial'?'/#activate=':'/';return}
-  if(await save(plan==='trial'?{type:'start_trial'}:{type:'subscription_request',plan})){
-   setMessage(plan==='trial'?'Your 10-day trial has started.':'Plan request saved. Contact your workspace administrator to arrange payment.');
-  }
- }
- return <section className="pricing-page"><header className="pricing-heading"><div><span className="eyebrow">SIMPLE PRICING FOR LOCAL SHOPS</span><h1>One store. Everything in order.</h1><p>Try Shopkeeper free for 10 days, then choose the plan that suits your business.</p></div>{!s&&<ThemeToggle/>}</header>
- <div className="pricing-grid">{[
-  {key:'trial',name:'Free trial',price:'₹0',term:'for 10 days',note:'Explore inventory, billing and reports',button:start===undefined?'Start free trial':remaining?remaining+' trial days left':'Trial ended'},
-  {key:'monthly',name:'Monthly',price:'₹1,000',term:'per month / store',note:'Flexible monthly plan',button:'Request monthly plan'},
-  {key:'yearly',name:'Yearly',price:'₹10,000',term:'per year / store',note:'Save ₹2,000 compared with 12 monthly payments',button:'Request yearly plan'}
- ].map(plan=><article className={'panel price-card '+(plan.key==='yearly'?'featured':'')} key={plan.key}>{plan.key==='yearly'&&<span className="badge green">₹2,000 yearly savings</span>}<h2>{plan.name}</h2><strong className="plan-price">{plan.price}</strong><p>{plan.term}</p><p>{plan.note}</p><ul><li>Inventory and barcode billing</li><li>Product discounts and MRP capture</li><li>Supplier returns and balances</li><li>Sales, profit and margin reports</li><li>Mobile access and light/dark themes</li></ul><button className="btn primary" disabled={busy||(plan.key==='trial'&&start!==undefined)} onClick={()=>void choose(plan.key as 'trial'|'monthly'|'yearly')}>{s?plan.button:plan.key==='trial'?'Activate your trial account':'Sign in to choose'}</button></article>)}</div>
- {message&&<div className="notice" role="status">{message}</div>}
- {s?.subscriptionRequest&&<div className="notice">Requested plan: <b>{s.subscriptionRequest.plan}</b> · {new Date(s.subscriptionRequest.date).toLocaleDateString('en-IN')} · Awaiting administrator confirmation.</div>}
- <p className="muted">Plans are per store. No automatic charge is made on this page. Your administrator handles account activation and payment confirmation.</p>
- {!s&&<p><a className="text-button" href="/">Already have an account? Sign in</a></p>}
+import {useEffect,useState} from 'react';
+import QRCode from 'qrcode';
+import {State,money} from '@/lib/store';
+import {api} from './api';
+export type PricingConfig={monthly:number;yearly:number;trialDays:number;upiId:string;payee:string;headline:string;version:number};
+export type Subscription={validUntil:number|null;daysRemaining:number;period:string;history:{id:string;kind:string;plan:string;amount:number;days:number;status:string;reference:string;created_at:number;valid_until:number|null}[]};
+export function SubscriptionHistory({info,admin=false,save,busy=false}:{info?:Subscription;admin?:boolean;save?:(a:any)=>Promise<unknown>;busy?:boolean}){
+ return <section className="panel table-scroll"><h2>Subscription history</h2><table className="ledger-table"><thead><tr>{['Date','Plan / change','Amount','Status','Reference','Valid until','Action'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{info?.history.map(h=><tr key={h.id}><td>{new Date(Number(h.created_at)).toLocaleDateString('en-IN')}</td><td>{h.plan||h.kind} · {h.days} days</td><td>{money(Number(h.amount))}</td><td>{h.status}</td><td>{h.reference||'Not submitted'}</td><td>{h.valid_until?new Date(Number(h.valid_until)).toLocaleDateString('en-IN'):'—'}</td><td>{admin&&h.status==='pending'&&<button className="btn" disabled={busy} onClick={()=>{if(confirm('Have you verified this payment in your bank account? This will extend validity and reactivate this store.'))void save?.({type:'subscription_approve',id:h.id})}}>Verify & activate</button>}</td></tr>)}</tbody></table>{!info?.history.length&&<p className="muted">No subscription changes yet.</p>}</section>;
+}
+export function Pricing({s,busy=false,save,config:provided,info,admin=false}:{s?:State;busy?:boolean;save?:(a:any)=>Promise<unknown>;config?:PricingConfig;info?:Subscription;admin?:boolean}){
+ const [config,setConfig]=useState<PricingConfig|undefined>(provided),[error,setError]=useState(''),[selected,setSelected]=useState(''),[qr,setQr]=useState('');
+ useEffect(()=>{if(provided)setConfig(provided);else api('/api/pricing').then(setConfig).catch(e=>setError(e.message))},[provided]);
+ const order=info?.history.find(h=>h.id===selected&&h.status==='pending');
+ const uri=config?.upiId&&order?'upi://pay?'+new URLSearchParams({pa:config.upiId,pn:config.payee,am:Number(order.amount).toFixed(2),cu:'INR',tn:'Shopkeeper '+order.plan+' '+order.id.slice(0,8)}).toString():'';
+ useEffect(()=>{let live=true;setQr('');if(uri)QRCode.toDataURL(uri,{width:280,margin:3,errorCorrectionLevel:'M'}).then(x=>{if(live)setQr(x)}).catch(()=>setError('QR generation failed. Use the payment link.'));return()=>{live=false}},[uri]);
+ async function choose(plan:'monthly'|'yearly'){if(!save){location.href='/?plan='+plan;return}const existing=info?.history.find(h=>h.plan===plan&&h.status==='pending');if(existing){setSelected(existing.id);return}const id=crypto.randomUUID();if(await save({type:'subscription_order',id,plan}))setSelected(id);}
+ return <section className="pricing-page"><header className="pricing-heading"><div><span className="eyebrow">PLANS FOR YOUR BUSINESS</span><h1>{config?.headline||'Shopkeeper plans'}</h1><p>{config?`Start with ${config.trialDays} days free. Subscribe or renew anytime.`:'Loading plans…'}</p></div></header>
+ {error&&<p role="alert">{error}</p>}
+ {info&&<div className="notice"><b>{info.daysRemaining} days remaining</b> · {info.period}{info.validUntil?' · Valid until '+new Date(info.validUntil).toLocaleDateString('en-IN'):''}</div>}
+ {config&&<div className="pricing-grid"><article className="panel price-card"><h2>Free trial</h2><strong className="plan-price">₹0</strong><p>{config.trialDays} days</p><p>Inventory, billing and reports for your store.</p><button className="btn" disabled={busy||!!s?.trialStartedAt} onClick={()=>save?void save({type:'start_trial'}):location.assign('/#activate=')}>{s?.trialStartedAt?'Trial started':'Start trial'}</button></article>{(['monthly','yearly'] as const).map(plan=><article className={'panel price-card '+(plan==='yearly'?'featured':'')} key={plan}><h2>{plan==='monthly'?'Monthly':'Yearly'}</h2><strong className="plan-price">{money(config[plan])}</strong><p>{plan==='monthly'?'30 days':'365 days'} per store</p>{plan==='yearly'&&config.monthly*12>config.yearly&&<span className="badge green">Save {money(config.monthly*12-config.yearly)} per year</span>}<ul><li>Barcode and product label scanning</li><li>Inventory, supplier accounts and billing</li><li>Sales and margin reports</li></ul><button className="btn primary" disabled={busy} onClick={()=>void choose(plan)}>Choose {plan}</button></article>)}</div>}
+ {order&&<section className="panel payment-panel"><h2>Pay for your {order.plan} plan</h2><p>Amount: <b>{money(Number(order.amount))}</b> · Payee: {config?.payee}</p>{qr&&<img className="payment-qr" src={qr} alt="Scan to pay your Shopkeeper subscription using UPI"/>}{uri?<><a className="btn primary" href={uri}>Open UPI app</a><p>{config?.upiId}</p></>:<p>Administrator must configure the payment UPI ID.</p>}<p>Check the payee and amount in your UPI app. Access is extended only after the administrator verifies payment.</p><form className="form" key={order.id} onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);await save?.({type:'subscription_reference',id:order.id,reference:f.get('reference')})}}><label>UPI transaction reference<input name="reference" required minLength={4} maxLength={100} defaultValue={order.reference}/></label><button className="btn" disabled={busy}>Submit payment reference</button></form></section>}
+ <SubscriptionHistory info={info} admin={admin} save={save} busy={busy}/>
+ <p className="muted">Payments are verified manually. No automatic debit. Expiry is displayed; the administrator manages suspension.</p>{!s&&<a href="/">Vendor sign in</a>}
  </section>;
+}
+export function PricingEditor({config,save,busy}:{config:PricingConfig;save:(a:any)=>Promise<unknown>;busy:boolean}){
+ const [message,setMessage]=useState('');
+ return <section className="panel"><h2>Pricing & payment settings</h2><p>These settings appear on public and vendor pricing pages. Existing payment requests keep their quoted price and duration.</p><form className="form" key={config.version} onSubmit={async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));if(await save({type:'pricing_update',version:config.version,pricing:{...f,monthly:Number(f.monthly),yearly:Number(f.yearly),trialDays:Number(f.trialDays)}}))setMessage('Pricing updated.')}}>{(['headline','monthly','yearly','trialDays','upiId','payee'] as const).map(k=><label key={k}>{({headline:'Page heading',monthly:'Monthly price (₹)',yearly:'Yearly price (₹)',trialDays:'Free trial days',upiId:'Payment UPI ID',payee:'Payee name'})[k]}<input name={k} defaultValue={config[k]} required={k!=='upiId'} type={['monthly','yearly','trialDays'].includes(k)?'number':'text'} min="1" step={k==='trialDays'?'1':'.01'} maxLength={150}/></label>)}<button className="btn primary" disabled={busy}>Save pricing</button><p role="status">{message}</p></form></section>;
 }
