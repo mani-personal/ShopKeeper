@@ -137,6 +137,8 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
                             return;
                         }
                     }
+                    if (a.type === 'sale' && !(validity(vendor,(await pricing(db)).trialDays).validUntil > Date.now()))
+                        throw bad('Subscription expired or inactive. Renew your plan and wait for administrator approval before making sales.', 403);
                     if (a.type === 'product' && a.version !== vendor.version)
                         throw bad('Inventory changed. Refresh before saving this product.', 409);
                     const s = JSON.parse(vendor.data);
