@@ -32,5 +32,24 @@ test('Subscription pricing, quotes, owner approval, extensions, expiry and isola
   const next=randomUUID();await call('/api/store',{type:'subscription_order',vendorId:'main',id:next,plan:'yearly'},owner);
   r=await call('/api/store',{type:'subscription_approve',vendorId:'main',id:next},owner);assert.equal(r.data.vendors.find(v=>v.id==='main').suspended,false);
   assert.equal(validity({data:'{}',valid_until:Date.now()-86400000}).daysRemaining,0);
+  const previousUntil=r.data.subscription.validUntil;
+  const advance=randomUUID();await call('/api/store',{type:'subscription_order',vendorId:'main',id:advance,plan:'monthly'},vendor);
+  r=await call('/api/store',{type:'subscription_approve',vendorId:'main',id:advance},owner);
+  assert.equal(r.data.subscription.validUntil,previousUntil+30*86400000,'advance renewal preserves every remaining millisecond');
+  const product={id:'',name:'Test item',barcode:'12345678',category:'General',unit:'piece',stock:10,min:1,price:50,cost:30};
+  r=await call('/api/store',{type:'product',vendorId:'main',version:r.data.version,product},vendor);assert.equal(r.status,200);
+  const sale={type:'sale',vendorId:'main',id:randomUUID(),items:[{id:r.data.state.products[0].id,qty:1}],discount:0,payment:'Cash',customer:'Walk-in customer'};
+  assert.equal((await call('/api/store',sale,vendor)).status,200);
+  await db.prepare('UPDATE vendors SET valid_until=? WHERE id=?').run(Date.now()-1000,'main');
+  const blocked={...sale,id:randomUUID()};
+  assert.equal((await call('/api/store',blocked,vendor)).status,403);
+  assert.equal((await call('/api/store',blocked,owner)).status,403);
+  const renewal=randomUUID();assert.equal((await call('/api/store',{type:'subscription_order',vendorId:'main',id:renewal,plan:'monthly'},vendor)).status,200);
+  await call('/api/store',{type:'subscription_reference',vendorId:'main',id:renewal,reference:'PAID123456'},vendor);
+  assert.equal((await call('/api/store',blocked,vendor)).status,403,'payment submission does not unlock sales');
+  assert.equal((await call('/api/store',{type:'subscription_approve',vendorId:'main',id:renewal},vendor)).status,403);
+  assert.equal((await call('/api/store',{type:'subscription_approve',vendorId:'main',id:renewal},owner)).status,200);
+  assert.equal((await call('/api/store',blocked,vendor)).status,200,'admin approval unlocks sales');
+
  }finally{await new Promise(r=>server.close(r));await db.close()}
 });
