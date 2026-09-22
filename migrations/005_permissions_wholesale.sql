@@ -1,0 +1,12 @@
+ALTER TABLE users DROP CONSTRAINT users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('owner','admin','vendor','wholesale'));
+ALTER TABLE users ADD COLUMN admin_permissions TEXT NOT NULL DEFAULT '["stores","vendor_access","subscriptions","pricing","inventory","sales","purchases","reports","wholesale"]';
+CREATE TABLE wholesalers(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,business_name TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',address TEXT NOT NULL DEFAULT '',created_at BIGINT NOT NULL);
+CREATE TABLE wholesale_products(id TEXT PRIMARY KEY,wholesaler_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,name TEXT NOT NULL,sku TEXT NOT NULL DEFAULT '',unit TEXT NOT NULL,price NUMERIC(12,2) NOT NULL,stock INTEGER NOT NULL,active BOOLEAN NOT NULL DEFAULT TRUE,created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL);
+CREATE UNIQUE INDEX wholesale_product_sku ON wholesale_products(wholesaler_id,sku) WHERE sku<>'';
+CREATE TABLE wholesale_requests(id TEXT PRIMARY KEY,wholesaler_id TEXT NOT NULL REFERENCES users(id),vendor_id TEXT NOT NULL REFERENCES vendors(id),status TEXT NOT NULL CHECK(status IN ('pending','accepted','completed','cancelled')),notes TEXT NOT NULL DEFAULT '',created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL);
+CREATE TABLE wholesale_request_items(request_id TEXT NOT NULL REFERENCES wholesale_requests(id) ON DELETE CASCADE,product_id TEXT NOT NULL REFERENCES wholesale_products(id),quantity INTEGER NOT NULL,unit_price NUMERIC(12,2) NOT NULL,PRIMARY KEY(request_id,product_id));
+CREATE TABLE wholesale_transactions(id TEXT PRIMARY KEY,request_id TEXT NOT NULL REFERENCES wholesale_requests(id),amount NUMERIC(12,2) NOT NULL,payment_status TEXT NOT NULL CHECK(payment_status IN ('pending','paid','partial')),reference TEXT NOT NULL DEFAULT '',created_at BIGINT NOT NULL);
+CREATE TABLE wholesale_refunds(id TEXT PRIMARY KEY,transaction_id TEXT NOT NULL REFERENCES wholesale_transactions(id),amount NUMERIC(12,2) NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','processed','rejected')),created_at BIGINT NOT NULL);
+CREATE INDEX wholesale_requests_vendor ON wholesale_requests(vendor_id,created_at);
+CREATE INDEX wholesale_requests_seller ON wholesale_requests(wholesaler_id,created_at);
