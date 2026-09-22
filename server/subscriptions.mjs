@@ -3,7 +3,7 @@ const bad=message=>Object.assign(Error(message),{status:400});
 export async function pricing(db){const row=await db.prepare('SELECT * FROM pricing_config WHERE id=1').get();return {...JSON.parse(row.data),version:row.version};}
 export function validity(v,trialDays=10){const s=JSON.parse(v.data);const until=Number(v.valid_until)||(s.trialStartedAt?Date.parse(s.trialStartedAt)+(v.trial_days??trialDays)*86400000:0);return {validUntil:until||null,daysRemaining:until?Math.max(0,Math.ceil((until-Date.now())/86400000)):0,period:v.valid_until?'Subscription':'Trial'};}
 export async function subscriptionInfo(db,v,config){return {vendorId:v.id,...validity(v,config.trialDays),history:await db.prepare('SELECT h.*,EXISTS(SELECT 1 FROM payment_proofs p WHERE p.payment_id=h.id) AS has_proof FROM subscription_history h WHERE vendor_id=? ORDER BY created_at DESC,id DESC LIMIT 200').all(v.id)};}
-export async function savePricing(db,user,a){requireOwner(user);const row=await db.prepare('SELECT * FROM pricing_config WHERE id=1 FOR UPDATE').get();if(a.version!==row.version)throw bad('Pricing changed. Refresh before saving.');
+export async function savePricing(db,user,a){requireOwner(user,'pricing');const row=await db.prepare('SELECT * FROM pricing_config WHERE id=1 FOR UPDATE').get();if(a.version!==row.version)throw bad('Pricing changed. Refresh before saving.');
  const p=a.pricing;if(!p||![p.monthly,p.yearly].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>0&&n<=1000000&&Math.round(n*100)/100===n)||!Number.isInteger(p.trialDays)||p.trialDays<1||p.trialDays>90||typeof p.upiId!=='string'||(p.upiId&&!/^[a-zA-Z0-9.\-_]{2,128}@[a-zA-Z0-9]{2,64}$/.test(p.upiId))||typeof p.payee!=='string'||!p.payee.trim()||p.payee.length>100||typeof p.headline!=='string'||!p.headline.trim()||p.headline.length>150)throw bad('Enter valid prices, trial days, payee, UPI ID and heading.');
  await db.prepare('UPDATE pricing_config SET data=?,version=version+1 WHERE id=1').run(JSON.stringify({monthly:p.monthly,yearly:p.yearly,trialDays:p.trialDays,upiId:p.upiId,payee:p.payee.trim(),headline:p.headline.trim()}));
 }
@@ -20,7 +20,7 @@ export async function subscriptionAction(db,user,v,a){
   const row=await db.prepare("SELECT * FROM subscription_history WHERE id=? AND vendor_id=? AND status='pending' FOR UPDATE").get(a.id,v.id);if(!row)throw bad('Pending payment not found.');
   await db.prepare('UPDATE subscription_history SET reference=? WHERE id=?').run(a.reference.trim(),a.id);return;
  }
- requireOwner(user);
+ requireOwner(user,'subscriptions');
  if(a.type==='subscription_approve'){
   const row=await db.prepare('SELECT * FROM subscription_history WHERE id=? AND vendor_id=? FOR UPDATE').get(a.id,v.id);if(!row)throw bad('Payment request not found.');if(row.status==='approved')return;if(row.status!=='pending')throw bad('Payment is not pending.');
   const until=Math.max(Date.now(),validity(v,config.trialDays).validUntil||0)+row.days*86400000;
@@ -35,4 +35,8 @@ export async function subscriptionAction(db,user,v,a){
   await db.prepare('UPDATE vendors SET valid_until=?,version=version+1 WHERE id=?').run(until,v.id);return;
  }
  throw bad('Unknown subscription action.');
+}
+export function registerSubscriptionRoutes(app,db){
+ app.get('/api/subscriptions/pending',async(req,res)=>{requireOwner(req.user,'subscriptions');const rows=await db.prepare(`SELECT h.*,v.data,EXISTS(SELECT 1 FROM payment_proofs p WHERE p.payment_id=h.id) AS has_proof FROM subscription_history h JOIN vendors v ON v.id=h.vendor_id WHERE h.status='pending' ORDER BY h.created_at ASC`).all();res.json({requests:rows.map(({data,...h})=>({...h,vendorName:JSON.parse(data).settings.name}))});});
+ app.post('/api/subscriptions/:id/approve',async(req,res)=>{requireOwner(req.user,'subscriptions');const row=await db.prepare('SELECT vendor_id FROM subscription_history WHERE id=?').get(req.params.id);if(!row)throw bad('Payment request not found.');const vendor=await db.prepare('SELECT * FROM vendors WHERE id=?').get(row.vendor_id);await subscriptionAction(db,req.user,vendor,{type:'subscription_approve',id:req.params.id});res.json({ok:true});});
 }
