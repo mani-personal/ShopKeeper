@@ -50,6 +50,14 @@ test('direct wholesale order, delivery payment and vendor margin receiving',asyn
   assert.equal(received.price,1020,'vendor margin controls the selling price');
   const payments=(await call('/api/marketplace/catalog?vendor=main',undefined,vendor)).data.transactions;
   assert.equal(payments.filter(x=>['partial','paid'].includes(x.payment_status)).reduce((n,x)=>n+Number(x.amount),0),1800);
+  r=await call('/api/wholesale/returns',{vendorId:'main',requestId:order.id,productId:product.id,quantity:1,unitPrice:900,reason:'Damaged bag'},vendor);
+  assert.equal(r.status,200,'delivered products can be returned');
+  const returnId=r.data.returns[0].id;
+  assert.equal((await call('/api/wholesale/returns/'+returnId+'/status',{status:'approved'},wholesale)).status,200);
+  assert.equal((await call('/api/wholesale/returns/'+returnId+'/status',{status:'received'},wholesale)).status,200);
+  r=await call('/api/marketplace/catalog?vendor=main',undefined,vendor);
+  assert.equal(r.data.returns[0].status,'received');
+  assert.equal(Number(r.data.returns[0].quantity)*Number(r.data.returns[0].unit_price),900,'received return creates an automatic order credit');
   assert.equal((await call('/api/marketplace/reviews',{vendorId:'main',requestId:order.id,rating:5,comment:'Fast delivery'},vendor)).status,200);
   assert.equal((await call('/api/marketplace/requests/'+order.id+'/repeat',{vendorId:'main'},vendor)).status,200);
   assert.ok(Number((await call('/api/marketplace/admin',undefined,owner)).data.summary.orders)>=2);
