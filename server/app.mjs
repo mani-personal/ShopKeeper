@@ -4,6 +4,7 @@ import {registerWholesaleRoutes} from './wholesale.mjs';
 import {registerActivityRoutes,recordActivity} from './activities.mjs';
 import {registerWholesaleSubscriptionRoutes} from './wholesale-subscriptions.mjs';
 import {wholesalePricing} from './wholesale-subscriptions.mjs';
+import {registerMarketplaceRoutes} from './marketplace.mjs';
 import {pricing,validity,subscriptionInfo,subscriptionAction,savePricing,registerSubscriptionRoutes} from './subscriptions.mjs';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
@@ -51,6 +52,7 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
     registerSubscriptionRoutes(app,db);
     registerWholesaleRoutes(app,db);
     registerWholesaleSubscriptionRoutes(app,db);
+    registerMarketplaceRoutes(app,db);
     registerActivityRoutes(app,db);
     app.get('/api/auth/me', (req, res) => res.json({ user: { id: req.user.id, email: req.user.email, role: req.user.role, name: req.user.name,permissions:permissions(req.user) }, csrf: req.user.csrf }));
     app.post('/api/auth/logout', async (req, res) => { await clearSession(db, res, req, secure); res.json({ ok: true }); });
