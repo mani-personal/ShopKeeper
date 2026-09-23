@@ -1,6 +1,9 @@
 import {registerAdminRoutes} from './admins.mjs';
 import {registerAssetRoutes} from './assets.mjs';
 import {registerWholesaleRoutes} from './wholesale.mjs';
+import {registerActivityRoutes,recordActivity} from './activities.mjs';
+import {registerWholesaleSubscriptionRoutes} from './wholesale-subscriptions.mjs';
+import {wholesalePricing} from './wholesale-subscriptions.mjs';
 import {pricing,validity,subscriptionInfo,subscriptionAction,savePricing,registerSubscriptionRoutes} from './subscriptions.mjs';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
@@ -28,6 +31,7 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
     app.use(express.json({ limit: '3mb' }));
     app.get('/api/health', async (_req, res) => { await db.prepare('SELECT 1').get(); res.json({ status: 'ok' }); });
     app.get('/api/pricing',async(_req,res)=>res.json(await pricing(db)));
+    app.get('/api/wholesale/pricing',async(_req,res)=>res.json(await wholesalePricing(db)));
     app.post('/api/auth/login', async (req, res) => { const mail = email(req.body.email); await limit(db, 'login-ip:' + digest(req.ip || ''), 30); await limit(db, 'login-email:' + digest(mail), 10); const user = await db.prepare('SELECT * FROM users WHERE email=?').get(mail); const dummy = 'scrypt:00000000000000000000000000000000:' + ('00'.repeat(64)); const valid = await verifyPassword(req.body.password, user?.password_hash ?? dummy); if (!user || !valid || user.disabled)
         throw bad('Email or password is incorrect.', 401); if(req.body.portal==='super-admin'&&user.role!=='owner')throw bad('Super admin access required.',403); if(req.body.portal==='admin'&&!isAdmin(user))throw bad('Use a vendor sign-in for this account.',403);if(req.body.portal==='wholesale'&&user.role!=='wholesale')throw bad('Wholesale seller access required.',403);if(!req.body.portal&&user.role==='wholesale')throw bad('Use the wholesale seller sign-in.',403);await requireActiveAccount(db,user); res.json(await startSession(db, res, user, secure)); });
     app.post('/api/auth/activate', async (req, res) => { await limit(db, 'activation:' + digest(req.ip || ''), 20); const mail = email(req.body.email); if (typeof req.body.token !== 'string' || req.body.token.length > 200)
@@ -46,6 +50,8 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
     registerAssetRoutes(app,db);
     registerSubscriptionRoutes(app,db);
     registerWholesaleRoutes(app,db);
+    registerWholesaleSubscriptionRoutes(app,db);
+    registerActivityRoutes(app,db);
     app.get('/api/auth/me', (req, res) => res.json({ user: { id: req.user.id, email: req.user.email, role: req.user.role, name: req.user.name,permissions:permissions(req.user) }, csrf: req.user.csrf }));
     app.post('/api/auth/logout', async (req, res) => { await clearSession(db, res, req, secure); res.json({ ok: true }); });
     app.post('/api/auth/password', async (req, res) => { await limit(db, 'password:' + req.user.id, 10); const user = await db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id); if (!await verifyPassword(req.body.currentPassword, user.password_hash))
@@ -162,6 +168,8 @@ export function createApp(db, { appOrigin = 'http://localhost:3000', secure = fa
                 }
             }
             await db.prepare('INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)').run(Date.now(), user.id, selected ?? null, a.type);
+            const titles={product:'Inventory item saved',sale:'Sale completed',purchase:'Stock purchase recorded',bill_import:'Supplier bill imported',inventory_import:'Inventory imported',contact:'Contact saved',expense:'Expense recorded',settings:'Store settings updated',supplier_return:'Supplier return recorded',supplier_payment:'Supplier payment recorded',purchase_settlement:'Purchase settled',subscription_order:'Subscription requested',subscription_reference:'Payment reference submitted',subscription_approve:'Subscription approved',subscription_extend:'Subscription validity extended',vendor_create:'Vendor store created',vendor_suspend:'Vendor suspended',vendor_reactivate:'Vendor reactivated',invite_vendor:'Vendor access invitation created',revoke_access:'Vendor access revoked',logo_update:'Store logo updated'};
+            await recordActivity(db,{actorId:user.id,vendorId:selected??null,scope:'vendor',category:a.type,title:titles[a.type]||'Store activity',detail:a.type==='sale'?'A sale was added to the store records.':''});
         });
         res.json({ ...await payload(user, selected), ...(code ? { accessCode: code } : {}) });
     }
