@@ -1,0 +1,10 @@
+import {useEffect,useRef,useState} from 'react';
+import {Bell,CheckCheck} from 'lucide-react';
+import {api} from './api';
+
+type Activity={id:string;title:string;detail:string;category:string;created_at:number;actor_name?:string;is_read:boolean};
+export function Notifications(){const [open,setOpen]=useState(false),[events,setEvents]=useState<Activity[]>([]),[unread,setUnread]=useState(0),[error,setError]=useState('');const root=useRef<HTMLDivElement>(null);
+ async function load(){try{const d=await api('/api/activities?limit=50');setEvents(d.events);setUnread(d.unread);setError('')}catch(e){setError((e as Error).message)}}
+ useEffect(()=>{void load();const timer=setInterval(()=>void load(),30000);const focus=()=>void load(),click=(e:MouseEvent)=>{if(root.current&&!root.current.contains(e.target as Node))setOpen(false)};window.addEventListener('focus',focus);document.addEventListener('mousedown',click);return()=>{clearInterval(timer);window.removeEventListener('focus',focus);document.removeEventListener('mousedown',click)}},[]);
+ async function markAll(){await api('/api/activities/read',{});setEvents(x=>x.map(e=>({...e,is_read:true})));setUnread(0)}
+ return <div className="notifications" ref={root}><button className="icon-button notification-button" aria-label="Activity notifications" title="Activity notifications" onClick={()=>{setOpen(!open);if(!open)void load()}}><Bell size={18}/>{unread>0&&<span>{unread>99?'99+':unread}</span>}</button>{open&&<section className="notification-panel"><header><div><b>Activity</b><small>Latest updates across your workspace</small></div><button className="text-button" disabled={!unread} onClick={()=>void markAll()}><CheckCheck size={15}/> Mark read</button></header>{error&&<p className="notice error">{error}</p>}<div className="notification-list">{events.map(e=><article className={e.is_read?'':'unread'} key={e.id}><i/><div><b>{e.title}</b>{e.detail&&<p>{e.detail}</p>}<small>{e.actor_name?e.actor_name+' · ':''}{new Date(Number(e.created_at)).toLocaleString('en-IN')}</small></div></article>)}{!events.length&&!error&&<p className="empty-inline">No activity yet.</p>}</div></section>}</div>}
