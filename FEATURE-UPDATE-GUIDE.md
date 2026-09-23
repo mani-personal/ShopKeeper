@@ -41,3 +41,15 @@ Add:
 ## Deploy
 
 No new environment variables are required. Upload all replaced and added files, commit, and redeploy. Migration 005 runs automatically during API initialization. Run `npm ci --ignore-scripts`, `npm run build`, and `npm test` locally if available.
+# Green Wholesale and Returns Update
+
+This version adds vendor-specific wholesale catalog access and product return management.
+
+- Wholesale sellers select exactly which vendors can see product names, prices and available stock.
+- Vendors can request products, review order and payment history, and submit returns from completed orders.
+- Returns record product, quantity, unit price, total value, reason and status.
+- Wholesale sellers approve or reject returns, then mark approved returns as received. Received quantities are restored to wholesale stock.
+- Vendor and wholesale consoles include responsive overview metrics and green light/dark themes.
+- Theme switches are icon-only with accessible labels and tooltips.
+
+Database migration `006_wholesale_access_returns.sql` runs automatically during deployment. Existing products, vendors, requests and payments are preserved.
