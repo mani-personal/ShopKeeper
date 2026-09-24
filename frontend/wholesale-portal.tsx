@@ -1,60 +1,2307 @@
-import {useEffect,useMemo,useState} from 'react';
-import {Package,RefreshCw,LogOut,Users,RotateCcw,ShoppingCart,IndianRupee,Upload,BadgeCheck,Star,Truck,ScanBarcode,Plus,FileText} from 'lucide-react';
-import QRCode from 'qrcode';
-import {api,logout} from './api';
-import {money} from '@/lib/store';
-import {PasswordInput} from './password-input';
-import {ThemeToggle} from './theme';
-import {Notifications} from './notifications';
-import {Support} from './support';
-import {PaymentProof,prepareImage} from './store-assets';
-import {MobileScanner} from '@/components/mobile-scanner';
-import {ProductLabel} from '@/components/product-label';
-import {parseProductCode} from '@/lib/product-label';
-import {openWholesaleInvoice,orderFinancials} from '@/lib/wholesale-invoice';
+import { useEffect, useMemo, useState } from "react";
+import {
+  Package,
+  RefreshCw,
+  LogOut,
+  Users,
+  RotateCcw,
+  ShoppingCart,
+  IndianRupee,
+  Upload,
+  BadgeCheck,
+  Star,
+  Truck,
+  ScanBarcode,
+  Plus,
+} from "lucide-react";
+import QRCode from "qrcode";
+import { api, logout } from "./api";
+import { money } from "@/lib/store";
+import { PasswordInput } from "./password-input";
+import { ThemeToggle } from "./theme";
+import { Notifications } from "./notifications";
+import { Support } from "./support";
+import { PaymentProof, prepareImage } from "./store-assets";
+import { MobileScanner } from "@/components/mobile-scanner";
+import { ProductLabel } from "@/components/product-label";
+import { parseProductCode } from "@/lib/product-label";
+import { orderFinancials } from "@/lib/wholesale-invoice";
+import { WholesaleInvoiceButton } from "./wholesale-invoice-dialog";
+import { Employees } from "./employees";
 
-const statusTone=(status:string)=>['completed','paid','processed','received'].includes(status)?'green':['cancelled','rejected'].includes(status)?'red':'amber';
-const orderLabel:Record<string,string>={pending:'Order received',quoted:'Order received',approved:'Ready to pack',packed:'Packed',dispatched:'On the way',delivered:'Delivered',completed:'Closed',cancelled:'Cancelled'};
-const orderHelp:Record<string,string>={pending:'No quotation is required. Pack the requested items.',quoted:'No vendor confirmation is required. Pack the requested items.',approved:'Pack the requested items.',packed:'Record payment if collected, then send the products.',dispatched:'Record payment while delivering and confirm receipt.',delivered:'Update any remaining payment, then close the order.',completed:'This order is complete. Payment records remain available.',cancelled:'This order was cancelled.'};
-export function WholesalePortal(){
- const [data,setData]=useState<any>(),[tab,setTab]=useState('Overview'),[message,setMessage]=useState(''),[editing,setEditing]=useState<any>(),[scanner,setScanner]=useState(false),[scanCode,setScanCode]=useState('');
- async function load(){try{setData(await api('/api/wholesale/portal'));setMessage('')}catch(e){setMessage((e as Error).message)}}
- useEffect(()=>{void load()},[]);
- async function post(path:string,body:any){try{setData(await api(path,body));setMessage('Saved successfully.');setEditing(undefined)}catch(e){setMessage((e as Error).message)}}
- async function saveProduct(body:any){try{await api('/api/marketplace/products',body);await load();setMessage('Catalogue product saved.');setEditing(undefined)}catch(e){setMessage((e as Error).message)}}
- function useScannedCode(raw:string){try{const draft=parseProductCode(raw),code=draft.barcode||'';const found=code?data?.products?.find((p:any)=>p.sku===code):undefined;if(found){setEditing(found);setMessage('Product found. Update its stock or price.')}else{setEditing({active:true,sku:code,name:draft.name||'',mrp:draft.mrp??'',category:'General',unit:'piece',min_qty:1});setMessage(draft.mrp?'Barcode and MRP copied. Review the details and save.':'New barcode copied. Add the product details and save.')}setTab('Products');setScanCode('')}catch(e){setMessage((e as Error).message)}}
- if(!data)return <main className="account-gate">{message||'Loading wholesale portal…'}</main>;
- const tabs=['Overview','Requests','Products','Vendors','Transactions','Returns','Refunds','Subscription','Settings','Support'];
- return <main className="wholesale-portal"><header className="wholesale-header"><div className="wholesale-identity">{data.profile.logo_image?<img className="wholesale-logo" src={data.profile.logo_image} alt=""/>:<Package/>}<b>{data.profile.business_name}</b><small>Wholesale seller console</small></div><nav aria-label="Wholesale pages">{tabs.map(x=><button className={tab===x?'active':''} onClick={()=>setTab(x)} key={x}>{x}</button>)}</nav><div className="wholesale-header-actions"><ThemeToggle/><Notifications/><button className="btn icon-only" aria-label="Refresh wholesale data" title="Refresh" onClick={()=>void load()}><RefreshCw size={17}/></button><button className="btn wholesale-signout" aria-label="Sign out" onClick={logout}><LogOut size={16}/><span>Sign out</span></button></div></header><div className="page"><div className="page-heading"><div><span className="eyebrow">WHOLESALE MANAGEMENT</span><h1>{tab}</h1><p>{tab==='Requests'?'See what the vendor needs, send the final price, then update delivery.':tab==='Products'?'Scan a pack or add a product without a barcode.':'Manage products, vendor orders, returns and payments in one place.'}</p></div>{tab==='Products'&&<div className="actions wholesale-product-actions"><button className="btn wholesale-camera-button" onClick={()=>setScanner(true)}><ScanBarcode size={17}/>Scan product</button><button className="btn primary" onClick={()=>setEditing({active:true,category:'General',unit:'piece',min_qty:1})}><Plus size={17}/>Add without barcode</button></div>}</div><div className="notice"><b>{data.subscription.daysRemaining} days remaining</b> · {data.subscription.period}{data.subscription.validUntil?' · Valid until '+new Date(data.subscription.validUntil).toLocaleDateString('en-IN'):''}</div>{message&&<p role="status" className="status-message">{message}</p>}
- {tab==='Overview'&&<><Overview data={data}/><WholesaleOnboarding data={data}/></>} {tab==='Requests'&&<MarketplaceRequests data={data} reload={load} setMessage={setMessage}/>} {tab==='Products'&&<><section className="wholesale-scan-panel"><div><ScanBarcode size={24}/><span><b>Scan a product</b><small>Use the mobile camera, a barcode photo, USB scanner, or type the code.</small></span></div><button type="button" className="btn primary wholesale-camera-button" onClick={()=>setScanner(true)}><ScanBarcode size={18}/>Open camera scanner</button><form className="scan-strip wholesale-scan-strip" onSubmit={e=>{e.preventDefault();if(scanCode.trim())useScannedCode(scanCode)}}><input autoFocus inputMode="numeric" autoComplete="off" aria-label="Wholesale barcode" placeholder="Scan or type barcode" value={scanCode} onChange={e=>setScanCode(e.target.value)}/><button className="btn" disabled={!scanCode.trim()}>Find or add</button></form></section><Products data={data} edit={setEditing}/></>} {tab==='Vendors'&&<VendorAccess data={data} post={post}/>} {tab==='Transactions'&&<Transactions data={data} post={post}/>} {tab==='Returns'&&<Returns data={data} post={post}/>} {tab==='Refunds'&&<Refunds data={data} post={post}/>} {tab==='Subscription'&&<WholesaleSubscription data={data} reload={load}/>} {tab==='Settings'&&<WholesaleSettings data={data} post={post} reload={load}/>} {tab==='Support'&&<Support/>}
- {editing&&<div className="panel wholesale-editor"><div className="panel-heading"><div><h2>{editing.id?'Update':'Add'} product</h2><p>Scan the pack or enter only the details printed on it.</p></div><button type="button" className="btn" onClick={()=>setScanner(true)}><ScanBarcode size={17}/>Scan barcode</button></div><ProductLabel apply={draft=>setEditing((p:any)=>({...p,...(draft.barcode?{sku:draft.barcode}:{}),...(draft.name?{name:draft.name}:{}),...(draft.mrp!==undefined?{mrp:draft.mrp}: {})}))}/><form key={[editing.id,editing.sku,editing.name,editing.mrp].join('|')} className="form product-editor-grid" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void saveProduct({id:editing.id,name:f.get('name'),sku:f.get('sku'),category:f.get('category'),description:f.get('description'),unit:f.get('unit'),price:Number(f.get('price')),mrp:f.get('mrp')===''?'':Number(f.get('mrp')),stock:Number(f.get('stock')),minQty:Number(f.get('minQty')),bulkQty:f.get('bulkQty')===''?'':Number(f.get('bulkQty')),bulkPrice:f.get('bulkPrice')===''?'':Number(f.get('bulkPrice')),active:f.get('active')==='on'})}}><label>Product name<input name="name" defaultValue={editing.name} required/></label><label>Barcode / item code<input name="sku" defaultValue={editing.sku} placeholder="Optional for products without barcode"/></label><label>Category<input name="category" defaultValue={editing.category||'General'} required/></label><label>Pack / unit<input name="unit" defaultValue={editing.unit||'piece'} required/></label><label>Wholesale price<input name="price" type="number" min=".01" step=".01" defaultValue={editing.price} required/></label><label>MRP<input name="mrp" type="number" min=".01" step=".01" defaultValue={editing.mrp??''}/></label><label>Available stock<input name="stock" type="number" min="0" step="1" defaultValue={editing.stock??''} required/></label><label>Minimum quantity<input name="minQty" type="number" min="1" step="1" defaultValue={editing.min_qty??1} required/></label><label>Bulk quantity<input name="bulkQty" type="number" min="1" step="1" defaultValue={editing.bulk_qty??''}/></label><label>Bulk unit price<input name="bulkPrice" type="number" min=".01" step=".01" defaultValue={editing.bulk_price??''}/></label><label className="full-field">Product note (optional)<textarea name="description" maxLength={500} defaultValue={editing.description}/></label><label className="check-row"><input name="active" type="checkbox" defaultChecked={editing.active!==false}/> Show this product to vendors</label><div className="actions full-field"><button className="btn primary">Save product</button><button type="button" className="btn" onClick={()=>setEditing(undefined)}>Cancel</button></div></form></div>}<MobileScanner open={scanner} onClose={()=>setScanner(false)} onScan={useScannedCode}/></div></main>;
+const statusTone = (status: string) =>
+  ["completed", "paid", "processed", "received"].includes(status)
+    ? "green"
+    : ["cancelled", "rejected"].includes(status)
+      ? "red"
+      : "amber";
+const orderLabel: Record<string, string> = {
+  pending: "Order received",
+  quoted: "Order received",
+  approved: "Ready to pack",
+  packed: "Packed",
+  dispatched: "On the way",
+  delivered: "Delivered",
+  completed: "Closed",
+  cancelled: "Cancelled",
+};
+const orderHelp: Record<string, string> = {
+  pending: "Review the items and confirm the order for the vendor.",
+  quoted: "No vendor confirmation is required. Pack the requested items.",
+  approved: "Pack the requested items.",
+  packed: "Record payment if collected, then send the products.",
+  dispatched: "Record payment while delivering and confirm receipt.",
+  delivered: "Update any remaining payment, then close the order.",
+  completed: "This order is complete. Payment records remain available.",
+  cancelled: "This order was cancelled.",
+};
+export function WholesalePortal() {
+  const [data, setData] = useState<any>(),
+    [tab, setTab] = useState("Overview"),
+    [message, setMessage] = useState(""),
+    [editing, setEditing] = useState<any>(),
+    [scanner, setScanner] = useState(false),
+    [scanCode, setScanCode] = useState("");
+  async function load() {
+    try {
+      setData(await api("/api/wholesale/portal"));
+      setMessage("");
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  async function post(path: string, body: any) {
+    try {
+      setData(await api(path, body));
+      setMessage("Saved successfully.");
+      setEditing(undefined);
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  async function saveProduct(body: any) {
+    try {
+      await api("/api/marketplace/products", body);
+      await load();
+      setMessage("Catalogue product saved.");
+      setEditing(undefined);
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  function useScannedCode(raw: string) {
+    try {
+      const draft = parseProductCode(raw),
+        code = draft.barcode || "";
+      const found = code
+        ? data?.products?.find((p: any) => p.sku === code)
+        : undefined;
+      if (found) {
+        setEditing(found);
+        setMessage("Product found. Update its stock or price.");
+      } else {
+        setEditing({
+          active: true,
+          sku: code,
+          name: draft.name || "",
+          mrp: draft.mrp ?? "",
+          category: "General",
+          unit: "piece",
+          min_qty: 1,
+        });
+        setMessage(
+          draft.mrp
+            ? "Barcode and MRP copied. Review the details and save."
+            : "New barcode copied. Add the product details and save.",
+        );
+      }
+      setTab("Products");
+      setScanCode("");
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  if (!data)
+    return (
+      <main className="account-gate">
+        {message || "Loading wholesale portal…"}
+      </main>
+    );
+  const tabs = [
+    "Overview",
+    "Requests",
+    "Products",
+    "Vendors",
+    "Transactions",
+    "Returns",
+    "Refunds",
+    "Reports",
+    "Employees",
+    "Subscription",
+    "Settings",
+    "Support",
+  ];
+  return (
+    <main className="wholesale-portal">
+      <header className="wholesale-header">
+        <div className="wholesale-identity">
+          {data.profile.logo_image ? (
+            <img
+              className="wholesale-logo"
+              src={data.profile.logo_image}
+              alt=""
+            />
+          ) : (
+            <Package />
+          )}
+          <b>{data.profile.business_name}</b>
+          <small>Wholesale seller console</small>
+        </div>
+        <nav aria-label="Wholesale pages">
+          {tabs.map((x) => (
+            <button
+              className={tab === x ? "active" : ""}
+              onClick={() => setTab(x)}
+              key={x}
+            >
+              {x}
+            </button>
+          ))}
+        </nav>
+        <div className="wholesale-header-actions">
+          <ThemeToggle />
+          <Notifications
+            onNavigate={(page) =>
+              setTab(page === "Payments" ? "Transactions" : page)
+            }
+          />
+          <button
+            className="btn icon-only"
+            aria-label="Refresh wholesale data"
+            title="Refresh"
+            onClick={() => void load()}
+          >
+            <RefreshCw size={17} />
+          </button>
+          <button
+            className="btn wholesale-signout"
+            aria-label="Sign out"
+            onClick={logout}
+          >
+            <LogOut size={16} />
+            <span>Sign out</span>
+          </button>
+        </div>
+      </header>
+      <div className="page">
+        <div className="page-heading">
+          <div>
+            <span className="eyebrow">WHOLESALE MANAGEMENT</span>
+            <h1>{tab}</h1>
+            <p>
+              {tab === "Requests"
+                ? "See what the vendor needs, send the final price, then update delivery."
+                : tab === "Products"
+                  ? "Scan a pack or add a product without a barcode."
+                  : "Manage products, vendor orders, returns and payments in one place."}
+            </p>
+          </div>
+          {tab === "Products" && (
+            <div className="actions wholesale-product-actions">
+              <button
+                className="btn wholesale-camera-button"
+                onClick={() => setScanner(true)}
+              >
+                <ScanBarcode size={17} />
+                Scan product
+              </button>
+              <button
+                className="btn primary"
+                onClick={() =>
+                  setEditing({
+                    active: true,
+                    category: "General",
+                    unit: "piece",
+                    min_qty: 1,
+                  })
+                }
+              >
+                <Plus size={17} />
+                Add without barcode
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="notice">
+          <b>{data.subscription.daysRemaining} days remaining</b> ·{" "}
+          {data.subscription.period}
+          {data.subscription.validUntil
+            ? " · Valid until " +
+              new Date(data.subscription.validUntil).toLocaleDateString("en-IN")
+            : ""}
+        </div>
+        {message && (
+          <p role="status" className="status-message">
+            {message}
+          </p>
+        )}
+        {tab === "Overview" && (
+          <>
+            <Overview data={data} />
+            <WholesaleOnboarding data={data} />
+          </>
+        )}{" "}
+        {tab === "Requests" && (
+          <MarketplaceRequests
+            data={data}
+            reload={load}
+            setMessage={setMessage}
+          />
+        )}{" "}
+        {tab === "Products" && (
+          <>
+            <section className="wholesale-scan-panel">
+              <div>
+                <ScanBarcode size={24} />
+                <span>
+                  <b>Scan a product</b>
+                  <small>
+                    Use the mobile camera, a barcode photo, USB scanner, or type
+                    the code.
+                  </small>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn primary wholesale-camera-button"
+                onClick={() => setScanner(true)}
+              >
+                <ScanBarcode size={18} />
+                Open camera scanner
+              </button>
+              <form
+                className="scan-strip wholesale-scan-strip"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (scanCode.trim()) useScannedCode(scanCode);
+                }}
+              >
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-label="Wholesale barcode"
+                  placeholder="Scan or type barcode"
+                  value={scanCode}
+                  onChange={(e) => setScanCode(e.target.value)}
+                />
+                <button className="btn" disabled={!scanCode.trim()}>
+                  Find or add
+                </button>
+              </form>
+            </section>
+            <Products data={data} edit={setEditing} />
+          </>
+        )}{" "}
+        {tab === "Vendors" && <VendorAccess data={data} post={post} />}{" "}
+        {tab === "Transactions" && <Transactions data={data} post={post} />}{" "}
+        {tab === "Returns" && <Returns data={data} post={post} />}{" "}
+        {tab === "Refunds" && <Refunds data={data} post={post} />}{" "}
+        {tab === "Reports" && <WholesaleReports data={data} />}{" "}
+        {tab === "Employees" && <Employees onMessage={setMessage} />}{" "}
+        {tab === "Subscription" && (
+          <WholesaleSubscription data={data} reload={load} />
+        )}{" "}
+        {tab === "Settings" && (
+          <WholesaleSettings data={data} post={post} reload={load} />
+        )}{" "}
+        {tab === "Support" && <Support />}
+        {editing && (
+          <div className="panel wholesale-editor">
+            <div className="panel-heading">
+              <div>
+                <h2>{editing.id ? "Update" : "Add"} product</h2>
+                <p>Scan the pack or enter only the details printed on it.</p>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setScanner(true)}
+              >
+                <ScanBarcode size={17} />
+                Scan barcode
+              </button>
+            </div>
+            <ProductLabel
+              apply={(draft) =>
+                setEditing((p: any) => ({
+                  ...p,
+                  ...(draft.barcode ? { sku: draft.barcode } : {}),
+                  ...(draft.name ? { name: draft.name } : {}),
+                  ...(draft.mrp !== undefined ? { mrp: draft.mrp } : {}),
+                }))
+              }
+            />
+            <form
+              key={[editing.id, editing.sku, editing.name, editing.mrp].join(
+                "|",
+              )}
+              className="form product-editor-grid"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                void saveProduct({
+                  id: editing.id,
+                  name: f.get("name"),
+                  sku: f.get("sku"),
+                  category: f.get("category"),
+                  description: f.get("description"),
+                  unit: f.get("unit"),
+                  price: Number(f.get("price")),
+                  mrp: f.get("mrp") === "" ? "" : Number(f.get("mrp")),
+                  stock: Number(f.get("stock")),
+                  minQty: Number(f.get("minQty")),
+                  bulkQty:
+                    f.get("bulkQty") === "" ? "" : Number(f.get("bulkQty")),
+                  bulkPrice:
+                    f.get("bulkPrice") === "" ? "" : Number(f.get("bulkPrice")),
+                  active: f.get("active") === "on",
+                });
+              }}
+            >
+              <label>
+                Product name
+                <input name="name" defaultValue={editing.name} required />
+              </label>
+              <label>
+                Barcode / item code
+                <input
+                  name="sku"
+                  defaultValue={editing.sku}
+                  placeholder="Optional for products without barcode"
+                />
+              </label>
+              <label>
+                Category
+                <input
+                  name="category"
+                  defaultValue={editing.category || "General"}
+                  required
+                />
+              </label>
+              <label>
+                Pack / unit
+                <input
+                  name="unit"
+                  defaultValue={editing.unit || "piece"}
+                  required
+                />
+              </label>
+              <label>
+                Wholesale price
+                <input
+                  name="price"
+                  type="number"
+                  min=".01"
+                  step=".01"
+                  defaultValue={editing.price}
+                  required
+                />
+              </label>
+              <label>
+                MRP
+                <input
+                  name="mrp"
+                  type="number"
+                  min=".01"
+                  step=".01"
+                  defaultValue={editing.mrp ?? ""}
+                />
+              </label>
+              <label>
+                Available stock
+                <input
+                  name="stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  defaultValue={editing.stock ?? ""}
+                  required
+                />
+              </label>
+              <label>
+                Minimum quantity
+                <input
+                  name="minQty"
+                  type="number"
+                  min="1"
+                  step="1"
+                  defaultValue={editing.min_qty ?? 1}
+                  required
+                />
+              </label>
+              <label>
+                Bulk quantity
+                <input
+                  name="bulkQty"
+                  type="number"
+                  min="1"
+                  step="1"
+                  defaultValue={editing.bulk_qty ?? ""}
+                />
+              </label>
+              <label>
+                Bulk unit price
+                <input
+                  name="bulkPrice"
+                  type="number"
+                  min=".01"
+                  step=".01"
+                  defaultValue={editing.bulk_price ?? ""}
+                />
+              </label>
+              <label className="full-field">
+                Product note (optional)
+                <textarea
+                  name="description"
+                  maxLength={500}
+                  defaultValue={editing.description}
+                />
+              </label>
+              <label className="check-row">
+                <input
+                  name="active"
+                  type="checkbox"
+                  defaultChecked={editing.active !== false}
+                />{" "}
+                Show this product to vendors
+              </label>
+              <div className="actions full-field">
+                <button className="btn primary">Save product</button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setEditing(undefined)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+        <MobileScanner
+          open={scanner}
+          onClose={() => setScanner(false)}
+          onScan={useScannedCode}
+        />
+      </div>
+    </main>
+  );
 }
 
-function Overview({data}:{data:any}){const sales=data.transactions.filter((x:any)=>['paid','partial'].includes(x.payment_status)).reduce((sum:number,x:any)=>sum+Number(x.amount),0),returns=data.returns.filter((x:any)=>!['received','rejected'].includes(x.status));return <div className="wholesale-dashboard"><div className="metrics"><div className="metric"><div><span>Products</span><span className="metric-icon tone-0"><Package size={18}/></span></div><strong>{data.products.length}</strong><small>{data.products.filter((x:any)=>x.active).length} active products</small></div><div className="metric"><div><span>Selected vendors</span><span className="metric-icon tone-1"><Users size={18}/></span></div><strong>{data.vendors.filter((x:any)=>x.selected).length}</strong><small>Can view your catalog</small></div><div className="metric"><div><span>Open orders</span><span className="metric-icon tone-2"><ShoppingCart size={18}/></span></div><strong>{data.requests.filter((x:any)=>!['completed','cancelled'].includes(x.status)).length}</strong><small>Pack, deliver or collect payment</small></div><div className="metric"><div><span>Amount received</span><span className="metric-icon tone-3"><IndianRupee size={18}/></span></div><strong>{money(sales)}</strong><small>{returns.length} open returns</small></div></div><div className="bottom-grid"><section className="panel padded"><h2>Recent vendor orders</h2>{data.requests.slice(0,5).map((r:any)=><div className="record-row" key={r.id}><div><b>{r.vendorName}</b><small>{r.items.map((i:any)=>i.name+' × '+i.quantity).join(', ')}</small></div><b>{money(Number(r.total))}</b><span className={'badge '+statusTone(r.status)}>{orderLabel[r.status]||r.status}</span></div>)}{!data.requests.length&&<p className="empty-inline">No vendor orders yet.</p>}</section><section className="panel padded"><h2>Return alerts</h2>{data.returns.slice(0,5).map((r:any)=><div className="record-row" key={r.id}><RotateCcw size={18}/><div><b>{r.product_name}</b><small>{r.vendorName} · {r.quantity} {r.unit}</small></div><b>{money(Number(r.quantity)*Number(r.unit_price))}</b></div>)}{!data.returns.length&&<p className="empty-inline">No product returns yet.</p>}</section></div></div>}
-function WholesaleOnboarding({data}:{data:any}){const items=[['Complete marketplace profile',!!data.profile.service_areas&&!!data.profile.brands],['Upload business logo',!!data.profile.logo_image],['Add catalogue products',data.products.length>0],['Choose catalogue visibility',data.profile.visibility_mode==='public'||data.vendors.some((x:any)=>x.selected)],['Pack first vendor order',data.requests.some((x:any)=>['packed','dispatched','delivered','completed'].includes(x.status))]];return <section className="panel padded onboarding-card"><div><span className="eyebrow">GROW YOUR NETWORK</span><h2>Wholesale launch checklist</h2><p>{items.filter(x=>x[1]).length} of {items.length} completed</p></div><div className="onboarding-list">{items.map(([label,done])=><span className={done?'done':''} key={String(label)}>{done?'✓':'○'} {label}</span>)}</div></section>}
-function Requests({data,post}:{data:any;post:(p:string,b:any)=>Promise<void>}){return <section className="panel table-scroll"><table className="ledger-table"><thead><tr>{['Vendor','Items','Total','Status','Actions'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{data.requests.map((r:any)=><tr key={r.id}><td>{r.vendorName}</td><td>{r.items.map((i:any)=>i.name+' × '+i.quantity).join(', ')}</td><td>{money(Number(r.total))}</td><td><span className={'badge '+statusTone(r.status)}>{r.status}</span></td><td className="actions">{r.status==='pending'&&<button className="btn" onClick={()=>void post('/api/wholesale/requests/'+r.id+'/status',{status:'accepted'})}>Accept</button>}{['pending','accepted'].includes(r.status)&&<button className="btn primary" onClick={()=>void post('/api/wholesale/requests/'+r.id+'/status',{status:'completed'})}>Complete</button>}{['pending','accepted'].includes(r.status)&&<button className="text-button" onClick={()=>void post('/api/wholesale/requests/'+r.id+'/status',{status:'cancelled'})}>Cancel</button>}</td></tr>)}</tbody></table>{!data.requests.length&&<p className="empty-inline">Vendor requests will appear here.</p>}</section>}
-function MarketplaceRequests({data,reload,setMessage}:{data:any;reload:()=>Promise<void>;setMessage:(x:string)=>void}){
- async function call(path:string,body:any,message:string){try{await api(path,body);setMessage(message);await reload()}catch(e){setMessage((e as Error).message)}}
- const next:any={pending:'packed',quoted:'packed',approved:'packed',packed:'dispatched',dispatched:'delivered',delivered:'completed'},action:any={pending:'Pack this order',quoted:'Pack this order',approved:'Items are packed',packed:'Send for delivery',dispatched:'Vendor received items',delivered:'Close this order'};
- return <><section className="simple-flow"><div><b>1. Order received</b><small>No quotation or vendor confirmation.</small></div><div><b>2. Pack & deliver</b><small>Update one step at a time.</small></div><div><b>3. Record payment</b><small>Paid, partial or pending.</small></div></section><div className="order-list">{data.requests.map((r:any)=>{const finance=orderFinancials(r,data.transactions,data.returns,data.refunds),payments=data.transactions.filter((t:any)=>t.request_id===r.id);return <article className="panel padded order-card" key={r.id}><div className="panel-heading"><div><b>{r.vendorName}</b><small>Order #{r.id.slice(0,8).toUpperCase()} · {new Date(Number(r.created_at)).toLocaleDateString('en-IN')}</small></div><span className={'badge '+statusTone(r.status)}>{orderLabel[r.status]||r.status}</span></div><div className="next-action"><b>Next step</b><span>{orderHelp[r.status]||'Review this order.'}</span></div><div className="simple-item-list">{r.items.map((i:any)=><span key={i.product_id}><b>{i.name}</b><em>{i.quantity} {i.unit}</em></span>)}</div><div className="order-total"><span>Net payable {money(finance.payable)}</span><span>Received {money(finance.paid)}</span><strong>{finance.refundDue?'Refund due '+money(finance.refundDue):finance.balance?'Pending '+money(finance.balance):'Fully paid'}</strong></div>{finance.returnCredit>0&&<small className="credit-note">Received returns credited: {money(finance.returnCredit)}</small>}<div className="actions">{next[r.status]&&<button className="btn primary large-action" onClick={()=>void call('/api/marketplace/requests/'+r.id+'/status',{status:next[r.status]},action[r.status]+'.')}>{action[r.status]}</button>}{['delivered','completed'].includes(r.status)&&<button className="btn" onClick={()=>{try{openWholesaleInvoice({order:r,sellerName:data.profile.business_name,buyerName:r.vendorName,transactions:data.transactions,returns:data.returns,refunds:data.refunds})}catch(e){setMessage((e as Error).message)}}}><FileText size={16}/>Invoice</button>}</div>{['packed','dispatched','delivered','completed'].includes(r.status)&&<PaymentManager order={r} due={finance.balance} payments={payments} call={call}/>}</article>})}{!data.requests.length&&<section className="panel padded"><p className="empty-inline">New vendor orders will appear here.</p></section>}</div></>;
+function Overview({ data }: { data: any }) {
+  const sales = data.transactions
+      .filter((x: any) => ["paid", "partial"].includes(x.payment_status))
+      .reduce((sum: number, x: any) => sum + Number(x.amount), 0),
+    inventoryUnits = data.products.reduce(
+      (sum: number, x: any) => sum + Number(x.stock),
+      0,
+    ),
+    inventoryValue = data.products.reduce(
+      (sum: number, x: any) => sum + Number(x.stock) * Number(x.price),
+      0,
+    ),
+    outstanding = data.requests.reduce(
+      (sum: number, r: any) =>
+        sum +
+        orderFinancials(r, data.transactions, data.returns, data.refunds)
+          .balance,
+      0,
+    ),
+    returns = data.returns.filter(
+      (x: any) => !["received", "rejected"].includes(x.status),
+    );
+  return (
+    <div className="wholesale-dashboard">
+      <div className="metrics">
+        <div className="metric">
+          <div>
+            <span>Products</span>
+            <span className="metric-icon tone-0">
+              <Package size={18} />
+            </span>
+          </div>
+          <strong>{data.products.length}</strong>
+          <small>
+            {data.products.filter((x: any) => x.active).length} active products
+          </small>
+        </div>
+        <div className="metric">
+          <div>
+            <span>Selected vendors</span>
+            <span className="metric-icon tone-1">
+              <Users size={18} />
+            </span>
+          </div>
+          <strong>{data.vendors.filter((x: any) => x.selected).length}</strong>
+          <small>Can view your catalog</small>
+        </div>
+        <div className="metric">
+          <div>
+            <span>Open orders</span>
+            <span className="metric-icon tone-2">
+              <ShoppingCart size={18} />
+            </span>
+          </div>
+          <strong>
+            {
+              data.requests.filter(
+                (x: any) => !["completed", "cancelled"].includes(x.status),
+              ).length
+            }
+          </strong>
+          <small>Pack, deliver or collect payment</small>
+        </div>
+        <div className="metric">
+          <div>
+            <span>Amount received</span>
+            <span className="metric-icon tone-3">
+              <IndianRupee size={18} />
+            </span>
+          </div>
+          <strong>{money(sales)}</strong>
+          <small>{returns.length} open returns</small>
+        </div>
+      </div>
+      <div className="metrics wholesale-finance-metrics">
+        <div className="metric">
+          <div>
+            <span>Inventory units</span>
+            <span className="metric-icon tone-0">
+              <Package size={18} />
+            </span>
+          </div>
+          <strong>{inventoryUnits}</strong>
+          <small>Across active and hidden items</small>
+        </div>
+        <div className="metric">
+          <div>
+            <span>Inventory sale value</span>
+            <span className="metric-icon tone-1">
+              <IndianRupee size={18} />
+            </span>
+          </div>
+          <strong>{money(inventoryValue)}</strong>
+          <small>Current stock × wholesale price</small>
+        </div>
+        <div className="metric">
+          <div>
+            <span>Revenue collected</span>
+            <span className="metric-icon tone-2">
+              <IndianRupee size={18} />
+            </span>
+          </div>
+          <strong>{money(sales)}</strong>
+          <small>Confirmed paid and partial receipts</small>
+        </div>
+        <div className="metric">
+          <div>
+            <span>Outstanding</span>
+            <span className="metric-icon tone-3">
+              <Truck size={18} />
+            </span>
+          </div>
+          <strong>{money(outstanding)}</strong>
+          <small>Pending across vendor orders</small>
+        </div>
+      </div>
+      <div className="bottom-grid">
+        <section className="panel padded">
+          <h2>Recent vendor orders</h2>
+          {data.requests.slice(0, 5).map((r: any) => (
+            <div className="record-row" key={r.id}>
+              <div>
+                <b>{r.vendorName}</b>
+                <small>
+                  {r.items
+                    .map((i: any) => i.name + " × " + i.quantity)
+                    .join(", ")}
+                </small>
+              </div>
+              <b>{money(Number(r.total))}</b>
+              <span className={"badge " + statusTone(r.status)}>
+                {orderLabel[r.status] || r.status}
+              </span>
+            </div>
+          ))}
+          {!data.requests.length && (
+            <p className="empty-inline">No vendor orders yet.</p>
+          )}
+        </section>
+        <section className="panel padded">
+          <h2>Return alerts</h2>
+          {data.returns.slice(0, 5).map((r: any) => (
+            <div className="record-row" key={r.id}>
+              <RotateCcw size={18} />
+              <div>
+                <b>{r.product_name}</b>
+                <small>
+                  {r.vendorName} · {r.quantity} {r.unit}
+                </small>
+              </div>
+              <b>{money(Number(r.quantity) * Number(r.unit_price))}</b>
+            </div>
+          ))}
+          {!data.returns.length && (
+            <p className="empty-inline">No product returns yet.</p>
+          )}
+        </section>
+      </div>
+    </div>
+  );
 }
-function PaymentManager({order,due,payments,call}:{order:any;due:number;payments:any[];call:(path:string,body:any,message:string)=>Promise<void>}){const [status,setStatus]=useState(due>0?'partial':'paid');return <section className="delivery-payment"><div><b>Payment record</b><small>{due>0?money(due)+' still pending':'Payment completed'}</small></div>{due>0&&<form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void call('/api/marketplace/requests/'+order.id+'/payment',{paymentStatus:status,amount:status==='pending'?0:Number(f.get('amount')),reference:f.get('reference')},status==='pending'?'Payment kept as pending.':'Payment recorded.')}}><label>Status<select value={status} onChange={e=>setStatus(e.target.value)}><option value="partial">Part payment</option><option value="paid">Fully paid</option><option value="pending">Not paid</option></select></label>{status!=='pending'&&<label>Amount received<input name="amount" type="number" min=".01" max={due} step=".01" defaultValue={status==='paid'?due:''} key={status} required/></label>}<label>Reference / note<input name="reference" placeholder="Cash, UPI number or note"/></label><button className="btn">Save payment</button></form>}{payments.length>0&&<div className="payment-history">{payments.map(p=><span key={p.id}><b>{p.payment_status==='pending'?'Pending':money(Number(p.amount))}</b><small>{p.reference||new Date(Number(p.created_at)).toLocaleDateString('en-IN')}</small></span>)}</div>}</section>}
-function Products({data,edit}:{data:any;edit:(x:any)=>void}){return <section className="panel table-scroll wholesale-products-table"><table className="ledger-table"><thead><tr>{['Product','Category','Barcode','Unit','Price / bulk','Minimum','Stock','Status',''].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{data.products.map((p:any)=><tr key={p.id}><td data-label="Product"><b>{p.name}</b>{p.description&&<small className="block-text">{p.description}</small>}</td><td data-label="Category">{p.category}</td><td data-label="Barcode">{p.sku||'No barcode'}</td><td data-label="Unit">{p.unit}</td><td data-label="Price">{money(Number(p.price))}{p.bulk_qty&&p.bulk_price&&<small className="block-text">{p.bulk_qty}+ · {money(Number(p.bulk_price))}</small>}</td><td data-label="Minimum">{p.min_qty||1}</td><td data-label="Stock">{p.stock}</td><td data-label="Status"><span className={'badge '+(p.active?'green':'amber')}>{p.active?'Active':'Hidden'}</span></td><td data-label="Action"><button className="btn" onClick={()=>edit(p)}>Edit product</button></td></tr>)}</tbody></table>{!data.products.length&&<p className="empty-inline">Scan or add your first wholesale product.</p>}</section>}
-function VendorAccess({data,post}:{data:any;post:(p:string,b:any)=>Promise<void>}){const [selected,setSelected]=useState<string[]>([]);useEffect(()=>setSelected(data.vendors.filter((v:any)=>v.selected).map((v:any)=>v.id)),[data.vendors]);return <section className="panel padded vendor-access-panel"><div className="panel-heading"><div><h2>Catalog visibility</h2><p>Only checked vendors can view your product names, prices and stock.</p></div><span className="badge green">{selected.length} selected</span></div><div className="vendor-access-list">{data.vendors.map((v:any)=><label className="vendor-access-row" key={v.id}><input type="checkbox" checked={selected.includes(v.id)} onChange={e=>setSelected(e.target.checked?[...selected,v.id]:selected.filter(id=>id!==v.id))}/><span><b>{v.name}</b><small>{v.id}</small></span><span>{selected.includes(v.id)?'Catalog visible':'Catalog hidden'}</span></label>)}</div>{!data.vendors.length&&<p className="empty-inline">No active vendors are available.</p>}<button className="btn primary" onClick={()=>void post('/api/wholesale/access',{vendorIds:selected})}>Save vendor access</button></section>}
-function Transactions({data}:{data:any;post:(p:string,b:any)=>Promise<void>}){const vendors=[...new Set(data.requests.map((r:any)=>r.vendor_id))];return <div className="transaction-ledger"><section className="notice"><b>Payments and return credits update these balances automatically. Record new payments from Requests while packing or delivering.</b></section><section className="supplier-balances">{vendors.map((id:any)=>{const orders=data.requests.filter((r:any)=>r.vendor_id===id&&!['cancelled'].includes(r.status)),name=orders[0]?.vendorName||'Vendor',summary=orders.reduce((a:any,r:any)=>{const f=orderFinancials(r,data.transactions,data.returns,data.refunds);a.payable+=f.payable;a.paid+=f.paid;a.balance+=f.balance;a.refund+=f.refundDue;return a},{payable:0,paid:0,balance:0,refund:0});return <article className="panel supplier-balance-card" key={id}><div><Users/><span><b>{name}</b><small>{orders.length} orders</small></span></div><dl><div><dt>Net sales</dt><dd>{money(summary.payable)}</dd></div><div><dt>Received</dt><dd>{money(summary.paid)}</dd></div><div><dt>Pending</dt><dd>{money(summary.balance)}</dd></div>{summary.refund>0&&<div><dt>Refund due</dt><dd>{money(summary.refund)}</dd></div>}</dl></article>})}</section><section className="order-payment-list">{data.requests.filter((r:any)=>!['cancelled'].includes(r.status)).map((r:any)=>{const f=orderFinancials(r,data.transactions,data.returns,data.refunds);return <article className="panel order-payment-card" key={r.id}><div><b>{r.vendorName}</b><small>Order #{r.id.slice(0,8).toUpperCase()}</small></div><div className="payment-numbers"><span>Order <b>{money(f.total)}</b></span><span>Returns <b>−{money(f.returnCredit)}</b></span><span>Received <b>{money(f.paid)}</b></span><span>{f.refundDue?'Refund due':'Pending'} <b>{money(f.refundDue||f.balance)}</b></span></div>{['delivered','completed'].includes(r.status)&&<button className="btn" onClick={()=>openWholesaleInvoice({order:r,sellerName:data.profile.business_name,buyerName:r.vendorName,transactions:data.transactions,returns:data.returns,refunds:data.refunds})}><FileText size={16}/>Invoice</button>}</article>})}</section><section className="panel padded"><h2>Payment history</h2>{data.transactions.map((t:any)=><div className="record-row" key={t.id}><div><b>{t.vendorName} · {t.payment_status==='pending'?'No payment':money(Number(t.amount))}</b><small>{t.reference||new Date(Number(t.created_at)).toLocaleDateString('en-IN')}</small></div><span className={'badge '+statusTone(t.payment_status)}>{t.payment_status}</span></div>)}{!data.transactions.length&&<p className="empty-inline">No payments recorded yet.</p>}</section></div>}
-function Returns({data,post}:{data:any;post:(p:string,b:any)=>Promise<void>}){return <section className="panel table-scroll"><table className="ledger-table"><thead><tr>{['Vendor','Product','Quantity','Unit price','Return value','Reason','Status','Action'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{data.returns.map((r:any)=><tr key={r.id}><td>{r.vendorName}</td><td>{r.product_name}</td><td>{r.quantity} {r.unit}</td><td>{money(Number(r.unit_price))}</td><td>{money(Number(r.quantity)*Number(r.unit_price))}</td><td>{r.reason}</td><td><span className={'badge '+statusTone(r.status)}>{r.status}</span></td><td className="actions">{r.status==='pending'&&<><button className="btn" onClick={()=>void post('/api/wholesale/returns/'+r.id+'/status',{status:'approved'})}>Approve</button><button className="text-button" onClick={()=>void post('/api/wholesale/returns/'+r.id+'/status',{status:'rejected'})}>Reject</button></>}{r.status==='approved'&&<button className="btn primary" onClick={()=>void post('/api/wholesale/returns/'+r.id+'/status',{status:'received'})}>Mark received</button>}</td></tr>)}</tbody></table>{!data.returns.length&&<p className="empty-inline">Vendor product returns will appear here.</p>}</section>}
-function Refunds({data,post}:{data:any;post:(p:string,b:any)=>Promise<void>}){return <section className="panel padded"><h2>Payment refund management</h2><form className="form-grid" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void post('/api/wholesale/refunds',{transactionId:f.get('transactionId'),amount:Number(f.get('amount')),reason:f.get('reason'),status:f.get('status')})}}><select name="transactionId" required>{data.transactions.map((t:any)=><option value={t.id} key={t.id}>{t.vendorName} · {money(Number(t.amount))}</option>)}</select><input name="amount" type="number" min=".01" step=".01" placeholder="Refund amount" required/><input name="reason" placeholder="Reason" required/><select name="status"><option value="processed">Processed</option><option value="pending">Pending</option><option value="rejected">Rejected</option></select><button className="btn primary">Record refund</button></form>{data.refunds.map((r:any)=><div className="record-row" key={r.id}><div><b>{money(Number(r.amount))}</b><small>{r.reason}</small></div><span className={'badge '+statusTone(r.status)}>{r.status}</span></div>)}{!data.refunds.length&&<p className="empty-inline">No payment refunds recorded.</p>}</section>}
-function WholesaleSubscription({data,reload}:{data:any;reload:()=>Promise<void>}){const [selected,setSelected]=useState(''),[qr,setQr]=useState(''),[message,setMessage]=useState('');const order=data.subscription.history.find((x:any)=>x.id===selected&&x.status==='pending');const uri=data.pricing.upiId&&order?'upi://pay?'+new URLSearchParams({pa:data.pricing.upiId,pn:data.pricing.payee,am:Number(order.amount).toFixed(2),cu:'INR',tn:'Shopkeeper wholesale '+order.plan}).toString():'';useEffect(()=>{let live=true;setQr('');if(uri)QRCode.toDataURL(uri,{width:280,margin:3}).then(x=>live&&setQr(x));return()=>{live=false}},[uri]);async function choose(plan:string){try{const pending=data.subscription.history.find((x:any)=>x.plan===plan&&x.status==='pending');if(pending){setSelected(pending.id);return}const d=await api('/api/wholesale/subscriptions/order',{id:crypto.randomUUID(),plan});setSelected(d.id);await reload()}catch(e){setMessage((e as Error).message)}}return <div className="pricing-page"><div className="pricing-grid"><article className="panel price-card"><h2>Free trial</h2><strong className="plan-price">₹0</strong><p>{data.pricing.trialDays} days</p><p>Explore wholesale products, vendor requests, returns, payments, and reports.</p></article>{(['monthly','yearly'] as const).map(plan=><article className={'panel price-card '+(plan==='yearly'?'featured':'')} key={plan}><h2>{plan==='monthly'?'Monthly':'Yearly'}</h2><strong className="plan-price">{money(Number(data.pricing[plan]))}</strong><p>{plan==='monthly'?'30 days':'365 days'}</p><button className="btn primary" onClick={()=>void choose(plan)}>Choose {plan}</button></article>)}</div>{message&&<p className="notice error">{message}</p>}{order&&<section className="panel payment-panel"><h2>Pay {money(Number(order.amount))}</h2>{qr&&<img className="payment-qr" src={qr} alt="Wholesale subscription UPI QR code"/>}{uri?<a className="btn primary" href={uri}>Open UPI app</a>:<p className="notice">Ask the administrator to configure the wholesale UPI payment ID.</p>}<PaymentProof wholesale paymentId={order.id} hasProof={order.has_proof} upload onUploaded={reload}/><form className="form" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/api/wholesale/subscriptions/reference',{id:order.id,reference:f.get('reference')});setMessage('Payment submitted for administrator approval.');await reload()}catch(e){setMessage((e as Error).message)}}}><label>UPI transaction reference<input name="reference" required minLength={4} defaultValue={order.reference}/></label><button className="btn">Submit payment reference</button></form></section>}<section className="panel table-scroll"><h2>Subscription history</h2><table className="ledger-table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Days</th><th>Status</th><th>Valid until</th></tr></thead><tbody>{data.subscription.history.map((x:any)=><tr key={x.id}><td>{new Date(Number(x.created_at)).toLocaleDateString('en-IN')}</td><td>{x.plan||x.kind}</td><td>{money(Number(x.amount))}</td><td>{x.days}</td><td><span className={'badge '+statusTone(x.status)}>{x.status}</span></td><td>{x.valid_until?new Date(Number(x.valid_until)).toLocaleDateString('en-IN'):'—'}</td></tr>)}</tbody></table>{!data.subscription.history.length&&<p className="empty-inline">No subscription history yet.</p>}</section></div>}
-function WholesaleSettings({data,reload}:{data:any;post:(p:string,b:any)=>Promise<void>;reload:()=>Promise<void>}){
- const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
- async function logo(file?:File){if(!file)return;setBusy(true);try{await api('/api/wholesale/logo',{image:await prepareImage(file,true)});setMessage('Logo updated.');await reload()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
- async function saveProfile(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));setBusy(true);try{await api('/api/marketplace/profile',{...f,minOrder:Number(f.minOrder),deliveryDays:Number(f.deliveryDays)});setMessage('Marketplace profile saved.');await reload()}catch(error){setMessage((error as Error).message)}finally{setBusy(false)}}
- return <div className="settings-grid"><section className="panel padded logo-settings"><h2>Wholesale logo</h2>{data.profile.logo_image&&<img className="logo-preview" src={data.profile.logo_image} alt="Current wholesale logo"/>}<label className="btn"><Upload size={16}/>{busy?'Uploading…':'Upload logo'}<input hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{void logo(e.target.files?.[0]);e.target.value=''}}/></label>{data.profile.logo_image&&<button className="text-button" onClick={async()=>{await api('/api/wholesale/logo',{remove:true});await reload()}}>Remove logo</button>}<p role="status">{message}</p></section><section className="panel padded"><div className="panel-heading"><div><h2>Marketplace profile</h2><p>Complete profiles are easier for vendors to discover and trust.</p></div>{data.profile.verified&&<span className="badge green"><BadgeCheck size={14}/> Verified</span>}</div><form className="form" onSubmit={saveProfile}><label>Contact name<input name="name" defaultValue={data.profile.name} required/></label><label>Business name<input name="businessName" defaultValue={data.profile.business_name} required/></label><label>GST number<input name="gstNumber" defaultValue={data.profile.gst_number}/></label><label>Phone<input name="phone" defaultValue={data.profile.phone}/></label><label>Address<textarea name="address" defaultValue={data.profile.address}/></label><label>Service areas<input name="serviceAreas" defaultValue={data.profile.service_areas} placeholder="Hosur, Krishnagiri, Bengaluru"/></label><label>Brands distributed<textarea name="brands" defaultValue={data.profile.brands} placeholder="Brand names separated by commas"/></label><label>Minimum order value<input name="minOrder" type="number" min="0" step=".01" defaultValue={data.profile.min_order||0} required/></label><label>Normal delivery days<input name="deliveryDays" type="number" min="0" max="90" defaultValue={data.profile.delivery_days||2} required/></label><label>Catalogue visibility<select name="visibilityMode" defaultValue={data.profile.visibility_mode||'selected'}><option value="selected">Approved vendors only</option><option value="public">All active vendors</option></select></label><button className="btn primary" disabled={busy}>Save marketplace profile</button></form></section><section className="panel padded"><h2>Account security</h2><p>{data.profile.email}</p><PasswordChange/></section></div>
+function WholesaleReports({ data }: { data: any }) {
+  const revenue = data.transactions
+      .filter((x: any) => ["paid", "partial"].includes(x.payment_status))
+      .reduce((sum: number, x: any) => sum + Number(x.amount), 0),
+    outstanding = data.requests.reduce(
+      (sum: number, r: any) =>
+        sum +
+        orderFinancials(r, data.transactions, data.returns, data.refunds)
+          .balance,
+      0,
+    ),
+    stockValue = data.products.reduce(
+      (sum: number, p: any) => sum + Number(p.stock) * Number(p.price),
+      0,
+    ),
+    units = data.products.reduce(
+      (sum: number, p: any) => sum + Number(p.stock),
+      0,
+    );
+  return (
+    <div className="report-stack">
+      <div className="metrics">
+        <div className="metric">
+          <span>Confirmed revenue</span>
+          <strong>{money(revenue)}</strong>
+          <small>Paid and partial receipts</small>
+        </div>
+        <div className="metric">
+          <span>Outstanding</span>
+          <strong>{money(outstanding)}</strong>
+          <small>Yet to collect from vendors</small>
+        </div>
+        <div className="metric">
+          <span>Inventory value</span>
+          <strong>{money(stockValue)}</strong>
+          <small>{units} units in stock</small>
+        </div>
+        <div className="metric">
+          <span>Delivered orders</span>
+          <strong>
+            {
+              data.requests.filter((r: any) =>
+                ["delivered", "completed"].includes(r.status),
+              ).length
+            }
+          </strong>
+          <small>Ready for invoices and payment</small>
+        </div>
+      </div>
+      <section className="panel table-scroll">
+        <div className="panel-heading">
+          <div>
+            <h2>Inventory report</h2>
+            <p>Live wholesale stock and sale value.</p>
+          </div>
+        </div>
+        <table className="ledger-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Units</th>
+              <th>Unit price</th>
+              <th>Stock value</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.products.map((p: any) => (
+              <tr key={p.id}>
+                <td>
+                  <b>{p.name}</b>
+                  <small className="block-text">{p.sku || "No barcode"}</small>
+                </td>
+                <td>{p.category}</td>
+                <td>
+                  {p.stock} {p.unit}
+                </td>
+                <td>{money(Number(p.price))}</td>
+                <td>{money(Number(p.stock) * Number(p.price))}</td>
+                <td>
+                  <span className={"badge " + (p.active ? "green" : "amber")}>
+                    {p.active ? "Active" : "Hidden"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!data.products.length && (
+          <p className="empty-inline">
+            Add products to see inventory reporting.
+          </p>
+        )}
+      </section>
+    </div>
+  );
 }
-function PasswordChange(){return <form className="form" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);await api('/api/auth/password',{currentPassword:f.get('current'),password:f.get('password')});location.reload()}}><label>Current password<PasswordInput name="current" required autoComplete="current-password"/></label><label>New password<PasswordInput name="password" required minLength={12} maxLength={128} autoComplete="new-password"/></label><button className="btn primary">Change password</button></form>}
+function WholesaleOnboarding({ data }: { data: any }) {
+  const items = [
+    [
+      "Complete marketplace profile",
+      !!data.profile.service_areas && !!data.profile.brands,
+    ],
+    ["Upload business logo", !!data.profile.logo_image],
+    ["Add catalogue products", data.products.length > 0],
+    [
+      "Choose catalogue visibility",
+      data.profile.visibility_mode === "public" ||
+        data.vendors.some((x: any) => x.selected),
+    ],
+    [
+      "Pack first vendor order",
+      data.requests.some((x: any) =>
+        ["packed", "dispatched", "delivered", "completed"].includes(x.status),
+      ),
+    ],
+  ];
+  return (
+    <section className="panel padded onboarding-card">
+      <div>
+        <span className="eyebrow">GROW YOUR NETWORK</span>
+        <h2>Wholesale launch checklist</h2>
+        <p>
+          {items.filter((x) => x[1]).length} of {items.length} completed
+        </p>
+      </div>
+      <div className="onboarding-list">
+        {items.map(([label, done]) => (
+          <span className={done ? "done" : ""} key={String(label)}>
+            {done ? "✓" : "○"} {label}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+function Requests({
+  data,
+  post,
+}: {
+  data: any;
+  post: (p: string, b: any) => Promise<void>;
+}) {
+  return (
+    <section className="panel table-scroll">
+      <table className="ledger-table">
+        <thead>
+          <tr>
+            {["Vendor", "Items", "Total", "Status", "Actions"].map((x) => (
+              <th key={x}>{x}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.requests.map((r: any) => (
+            <tr key={r.id}>
+              <td>{r.vendorName}</td>
+              <td>
+                {r.items
+                  .map((i: any) => i.name + " × " + i.quantity)
+                  .join(", ")}
+              </td>
+              <td>{money(Number(r.total))}</td>
+              <td>
+                <span className={"badge " + statusTone(r.status)}>
+                  {r.status}
+                </span>
+              </td>
+              <td className="actions">
+                {r.status === "pending" && (
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      void post("/api/wholesale/requests/" + r.id + "/status", {
+                        status: "accepted",
+                      })
+                    }
+                  >
+                    Accept
+                  </button>
+                )}
+                {["pending", "accepted"].includes(r.status) && (
+                  <button
+                    className="btn primary"
+                    onClick={() =>
+                      void post("/api/wholesale/requests/" + r.id + "/status", {
+                        status: "completed",
+                      })
+                    }
+                  >
+                    Complete
+                  </button>
+                )}
+                {["pending", "accepted"].includes(r.status) && (
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      void post("/api/wholesale/requests/" + r.id + "/status", {
+                        status: "cancelled",
+                      })
+                    }
+                  >
+                    Cancel
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!data.requests.length && (
+        <p className="empty-inline">Vendor requests will appear here.</p>
+      )}
+    </section>
+  );
+}
+function MarketplaceRequests({
+  data,
+  reload,
+  setMessage,
+}: {
+  data: any;
+  reload: () => Promise<void>;
+  setMessage: (x: string) => void;
+}) {
+  async function call(path: string, body: any, message: string) {
+    try {
+      await api(path, body);
+      setMessage(message);
+      await reload();
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  const next: any = {
+      pending: "approved",
+      quoted: "approved",
+      approved: "packed",
+      packed: "dispatched",
+      dispatched: "delivered",
+      delivered: "completed",
+    },
+    action: any = {
+      pending: "Confirm this order",
+      quoted: "Confirm this order",
+      approved: "Items are packed",
+      packed: "Send for delivery",
+      dispatched: "Vendor received items",
+      delivered: "Close this order",
+    };
+  return (
+    <>
+      <section className="simple-flow">
+        <div>
+          <b>1. Confirm order</b>
+          <small>Vendor immediately sees your confirmation.</small>
+        </div>
+        <div>
+          <b>2. Pack & deliver</b>
+          <small>Update one step at a time.</small>
+        </div>
+        <div>
+          <b>3. Record payment</b>
+          <small>Paid, partial or pending.</small>
+        </div>
+      </section>
+      <div className="order-list">
+        {data.requests.map((r: any) => {
+          const finance = orderFinancials(
+              r,
+              data.transactions,
+              data.returns,
+              data.refunds,
+            ),
+            payments = data.transactions.filter(
+              (t: any) => t.request_id === r.id,
+            );
+          return (
+            <article className="panel padded order-card" key={r.id}>
+              <div className="panel-heading">
+                <div>
+                  <b>{r.vendorName}</b>
+                  <small>
+                    Order #{r.id.slice(0, 8).toUpperCase()} ·{" "}
+                    {new Date(Number(r.created_at)).toLocaleDateString("en-IN")}
+                  </small>
+                </div>
+                <span className={"badge " + statusTone(r.status)}>
+                  {orderLabel[r.status] || r.status}
+                </span>
+              </div>
+              <div className="next-action">
+                <b>Next step</b>
+                <span>{orderHelp[r.status] || "Review this order."}</span>
+              </div>
+              <div className="simple-item-list">
+                {r.items.map((i: any) => (
+                  <span key={i.product_id}>
+                    <b>{i.name}</b>
+                    <em>
+                      {i.quantity} {i.unit}
+                    </em>
+                  </span>
+                ))}
+              </div>
+              <div className="order-total">
+                <span>Net payable {money(finance.payable)}</span>
+                <span>Received {money(finance.paid)}</span>
+                <strong>
+                  {finance.refundDue
+                    ? "Refund due " + money(finance.refundDue)
+                    : finance.balance
+                      ? "Pending " + money(finance.balance)
+                      : "Fully paid"}
+                </strong>
+              </div>
+              {finance.returnCredit > 0 && (
+                <small className="credit-note">
+                  Received returns credited: {money(finance.returnCredit)}
+                </small>
+              )}
+              <div className="actions">
+                {next[r.status] && (
+                  <button
+                    className="btn primary large-action"
+                    onClick={() =>
+                      void call(
+                        "/api/marketplace/requests/" + r.id + "/status",
+                        { status: next[r.status] },
+                        action[r.status] + ".",
+                      )
+                    }
+                  >
+                    {action[r.status]}
+                  </button>
+                )}
+                {["delivered", "completed"].includes(r.status) && (
+                  <WholesaleInvoiceButton
+                    order={r}
+                    sellerName={data.profile.business_name}
+                    buyerName={r.vendorName}
+                    transactions={data.transactions}
+                    returns={data.returns}
+                    refunds={data.refunds}
+                  />
+                )}
+              </div>
+              {["packed", "dispatched", "delivered", "completed"].includes(
+                r.status,
+              ) && (
+                <PaymentManager
+                  order={r}
+                  due={finance.balance}
+                  payments={payments}
+                  call={call}
+                />
+              )}
+            </article>
+          );
+        })}
+        {!data.requests.length && (
+          <section className="panel padded">
+            <p className="empty-inline">New vendor orders will appear here.</p>
+          </section>
+        )}
+      </div>
+    </>
+  );
+}
+function PaymentManager({
+  order,
+  due,
+  payments,
+  call,
+}: {
+  order: any;
+  due: number;
+  payments: any[];
+  call: (path: string, body: any, message: string) => Promise<void>;
+}) {
+  const [status, setStatus] = useState(due > 0 ? "partial" : "paid");
+  return (
+    <section className="delivery-payment">
+      <div>
+        <b>Payment record</b>
+        <small>
+          {due > 0 ? money(due) + " still pending" : "Payment completed"}
+        </small>
+      </div>
+      {due > 0 && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void call(
+              "/api/marketplace/requests/" + order.id + "/payment",
+              {
+                paymentStatus: status,
+                amount: status === "pending" ? 0 : Number(f.get("amount")),
+                reference: f.get("reference"),
+              },
+              status === "pending"
+                ? "Payment kept as pending."
+                : "Payment recorded.",
+            );
+          }}
+        >
+          <label>
+            Status
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="partial">Part payment</option>
+              <option value="paid">Fully paid</option>
+              <option value="pending">Not paid</option>
+            </select>
+          </label>
+          {status !== "pending" && (
+            <label>
+              Amount received
+              <input
+                name="amount"
+                type="number"
+                min=".01"
+                max={due}
+                step=".01"
+                defaultValue={status === "paid" ? due : ""}
+                key={status}
+                required
+              />
+            </label>
+          )}
+          <label>
+            Reference / note
+            <input name="reference" placeholder="Cash, UPI number or note" />
+          </label>
+          <button className="btn">Save payment</button>
+        </form>
+      )}
+      {payments.length > 0 && (
+        <div className="payment-history">
+          {payments.map((p) => (
+            <span key={p.id}>
+              <b>
+                {p.payment_status === "pending"
+                  ? "Pending"
+                  : money(Number(p.amount))}
+              </b>
+              <small>
+                {p.reference ||
+                  new Date(Number(p.created_at)).toLocaleDateString("en-IN")}
+              </small>
+              {p.payment_status === "pending" && p.submitted_by_vendor && (
+                <span className="actions">
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      void call(
+                        "/api/marketplace/payments/" + p.id + "/confirm",
+                        {},
+                        "Vendor payment confirmed.",
+                      )
+                    }
+                  >
+                    Confirm UPI
+                  </button>
+                  <button
+                    className="text-button danger"
+                    onClick={() =>
+                      void call(
+                        "/api/marketplace/payments/" + p.id + "/reject",
+                        {
+                          reason:
+                            prompt(
+                              "Why is this payment rejected?",
+                              "Transaction not found",
+                            ) || "Transaction not found",
+                        },
+                        "Payment rejected.",
+                      )
+                    }
+                  >
+                    Reject
+                  </button>
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
+  return (
+    <section className="panel table-scroll wholesale-products-table">
+      <table className="ledger-table">
+        <thead>
+          <tr>
+            {[
+              "Product",
+              "Category",
+              "Barcode",
+              "Unit",
+              "Price / bulk",
+              "Minimum",
+              "Stock",
+              "Status",
+              "",
+            ].map((x) => (
+              <th key={x}>{x}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.products.map((p: any) => (
+            <tr key={p.id}>
+              <td data-label="Product">
+                <b>{p.name}</b>
+                {p.description && (
+                  <small className="block-text">{p.description}</small>
+                )}
+              </td>
+              <td data-label="Category">{p.category}</td>
+              <td data-label="Barcode">{p.sku || "No barcode"}</td>
+              <td data-label="Unit">{p.unit}</td>
+              <td data-label="Price">
+                {money(Number(p.price))}
+                {p.bulk_qty && p.bulk_price && (
+                  <small className="block-text">
+                    {p.bulk_qty}+ · {money(Number(p.bulk_price))}
+                  </small>
+                )}
+              </td>
+              <td data-label="Minimum">{p.min_qty || 1}</td>
+              <td data-label="Stock">{p.stock}</td>
+              <td data-label="Status">
+                <span className={"badge " + (p.active ? "green" : "amber")}>
+                  {p.active ? "Active" : "Hidden"}
+                </span>
+              </td>
+              <td data-label="Action">
+                <button className="btn" onClick={() => edit(p)}>
+                  Edit product
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!data.products.length && (
+        <p className="empty-inline">
+          Scan or add your first wholesale product.
+        </p>
+      )}
+    </section>
+  );
+}
+function VendorAccess({
+  data,
+  post,
+}: {
+  data: any;
+  post: (p: string, b: any) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  useEffect(
+    () =>
+      setSelected(
+        data.vendors.filter((v: any) => v.selected).map((v: any) => v.id),
+      ),
+    [data.vendors],
+  );
+  return (
+    <section className="panel padded vendor-access-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Catalog visibility</h2>
+          <p>
+            Only checked vendors can view your product names, prices and stock.
+          </p>
+        </div>
+        <span className="badge green">{selected.length} selected</span>
+      </div>
+      <div className="vendor-access-list">
+        {data.vendors.map((v: any) => (
+          <label className="vendor-access-row" key={v.id}>
+            <input
+              type="checkbox"
+              checked={selected.includes(v.id)}
+              onChange={(e) =>
+                setSelected(
+                  e.target.checked
+                    ? [...selected, v.id]
+                    : selected.filter((id) => id !== v.id),
+                )
+              }
+            />
+            <span>
+              <b>{v.name}</b>
+              <small>{v.id}</small>
+            </span>
+            <span>
+              {selected.includes(v.id) ? "Catalog visible" : "Catalog hidden"}
+            </span>
+          </label>
+        ))}
+      </div>
+      {!data.vendors.length && (
+        <p className="empty-inline">No active vendors are available.</p>
+      )}
+      <button
+        className="btn primary"
+        onClick={() =>
+          void post("/api/wholesale/access", { vendorIds: selected })
+        }
+      >
+        Save vendor access
+      </button>
+    </section>
+  );
+}
+function Transactions({
+  data,
+}: {
+  data: any;
+  post: (p: string, b: any) => Promise<void>;
+}) {
+  const vendors = [...new Set(data.requests.map((r: any) => r.vendor_id))];
+  return (
+    <div className="transaction-ledger">
+      <section className="notice">
+        <b>
+          Payments and return credits update these balances automatically.
+          Record new payments from Requests while packing or delivering.
+        </b>
+      </section>
+      <section className="supplier-balances">
+        {vendors.map((id: any) => {
+          const orders = data.requests.filter(
+              (r: any) =>
+                r.vendor_id === id && !["cancelled"].includes(r.status),
+            ),
+            name = orders[0]?.vendorName || "Vendor",
+            summary = orders.reduce(
+              (a: any, r: any) => {
+                const f = orderFinancials(
+                  r,
+                  data.transactions,
+                  data.returns,
+                  data.refunds,
+                );
+                a.payable += f.payable;
+                a.paid += f.paid;
+                a.balance += f.balance;
+                a.refund += f.refundDue;
+                return a;
+              },
+              { payable: 0, paid: 0, balance: 0, refund: 0 },
+            );
+          return (
+            <article className="panel supplier-balance-card" key={id}>
+              <div>
+                <Users />
+                <span>
+                  <b>{name}</b>
+                  <small>{orders.length} orders</small>
+                </span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Net sales</dt>
+                  <dd>{money(summary.payable)}</dd>
+                </div>
+                <div>
+                  <dt>Received</dt>
+                  <dd>{money(summary.paid)}</dd>
+                </div>
+                <div>
+                  <dt>Pending</dt>
+                  <dd>{money(summary.balance)}</dd>
+                </div>
+                {summary.refund > 0 && (
+                  <div>
+                    <dt>Refund due</dt>
+                    <dd>{money(summary.refund)}</dd>
+                  </div>
+                )}
+              </dl>
+            </article>
+          );
+        })}
+      </section>
+      <section className="order-payment-list">
+        {data.requests
+          .filter((r: any) => !["cancelled"].includes(r.status))
+          .map((r: any) => {
+            const f = orderFinancials(
+              r,
+              data.transactions,
+              data.returns,
+              data.refunds,
+            );
+            return (
+              <article className="panel order-payment-card" key={r.id}>
+                <div>
+                  <b>{r.vendorName}</b>
+                  <small>Order #{r.id.slice(0, 8).toUpperCase()}</small>
+                </div>
+                <div className="payment-numbers">
+                  <span>
+                    Order <b>{money(f.total)}</b>
+                  </span>
+                  <span>
+                    Returns <b>−{money(f.returnCredit)}</b>
+                  </span>
+                  <span>
+                    Received <b>{money(f.paid)}</b>
+                  </span>
+                  <span>
+                    {f.refundDue ? "Refund due" : "Pending"}{" "}
+                    <b>{money(f.refundDue || f.balance)}</b>
+                  </span>
+                </div>
+                {["delivered", "completed"].includes(r.status) && (
+                  <WholesaleInvoiceButton
+                    order={r}
+                    sellerName={data.profile.business_name}
+                    buyerName={r.vendorName}
+                    transactions={data.transactions}
+                    returns={data.returns}
+                    refunds={data.refunds}
+                  />
+                )}
+              </article>
+            );
+          })}
+      </section>
+      <section className="panel padded">
+        <h2>Payment history</h2>
+        {data.transactions.map((t: any) => (
+          <div className="record-row" key={t.id}>
+            <div>
+              <b>
+                {t.vendorName} ·{" "}
+                {t.payment_status === "pending"
+                  ? "No payment"
+                  : money(Number(t.amount))}
+              </b>
+              <small>
+                {t.reference ||
+                  new Date(Number(t.created_at)).toLocaleDateString("en-IN")}
+              </small>
+            </div>
+            <span className={"badge " + statusTone(t.payment_status)}>
+              {t.payment_status}
+            </span>
+          </div>
+        ))}
+        {!data.transactions.length && (
+          <p className="empty-inline">No payments recorded yet.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+function Returns({
+  data,
+  post,
+}: {
+  data: any;
+  post: (p: string, b: any) => Promise<void>;
+}) {
+  return (
+    <section className="panel table-scroll">
+      <table className="ledger-table">
+        <thead>
+          <tr>
+            {[
+              "Vendor",
+              "Product",
+              "Quantity",
+              "Unit price",
+              "Return value",
+              "Reason",
+              "Status",
+              "Action",
+            ].map((x) => (
+              <th key={x}>{x}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.returns.map((r: any) => (
+            <tr key={r.id}>
+              <td>{r.vendorName}</td>
+              <td>{r.product_name}</td>
+              <td>
+                {r.quantity} {r.unit}
+              </td>
+              <td>{money(Number(r.unit_price))}</td>
+              <td>{money(Number(r.quantity) * Number(r.unit_price))}</td>
+              <td>{r.reason}</td>
+              <td>
+                <span className={"badge " + statusTone(r.status)}>
+                  {r.status}
+                </span>
+              </td>
+              <td className="actions">
+                {r.status === "pending" && (
+                  <>
+                    <button
+                      className="btn"
+                      onClick={() =>
+                        void post(
+                          "/api/wholesale/returns/" + r.id + "/status",
+                          { status: "approved" },
+                        )
+                      }
+                    >
+                      Approve
+                    </button>
+                    <button
+                      className="text-button"
+                      onClick={() =>
+                        void post(
+                          "/api/wholesale/returns/" + r.id + "/status",
+                          { status: "rejected" },
+                        )
+                      }
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+                {r.status === "approved" && (
+                  <button
+                    className="btn primary"
+                    onClick={() =>
+                      void post("/api/wholesale/returns/" + r.id + "/status", {
+                        status: "received",
+                      })
+                    }
+                  >
+                    Mark received
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!data.returns.length && (
+        <p className="empty-inline">Vendor product returns will appear here.</p>
+      )}
+    </section>
+  );
+}
+function Refunds({
+  data,
+  post,
+}: {
+  data: any;
+  post: (p: string, b: any) => Promise<void>;
+}) {
+  return (
+    <section className="panel padded">
+      <h2>Payment refund management</h2>
+      <form
+        className="form-grid"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          void post("/api/wholesale/refunds", {
+            transactionId: f.get("transactionId"),
+            amount: Number(f.get("amount")),
+            reason: f.get("reason"),
+            status: f.get("status"),
+          });
+        }}
+      >
+        <select name="transactionId" required>
+          {data.transactions.map((t: any) => (
+            <option value={t.id} key={t.id}>
+              {t.vendorName} · {money(Number(t.amount))}
+            </option>
+          ))}
+        </select>
+        <input
+          name="amount"
+          type="number"
+          min=".01"
+          step=".01"
+          placeholder="Refund amount"
+          required
+        />
+        <input name="reason" placeholder="Reason" required />
+        <select name="status">
+          <option value="processed">Processed</option>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button className="btn primary">Record refund</button>
+      </form>
+      {data.refunds.map((r: any) => (
+        <div className="record-row" key={r.id}>
+          <div>
+            <b>{money(Number(r.amount))}</b>
+            <small>{r.reason}</small>
+          </div>
+          <span className={"badge " + statusTone(r.status)}>{r.status}</span>
+        </div>
+      ))}
+      {!data.refunds.length && (
+        <p className="empty-inline">No payment refunds recorded.</p>
+      )}
+    </section>
+  );
+}
+function WholesaleSubscription({
+  data,
+  reload,
+}: {
+  data: any;
+  reload: () => Promise<void>;
+}) {
+  const [selected, setSelected] = useState(""),
+    [qr, setQr] = useState(""),
+    [message, setMessage] = useState("");
+  const order = data.subscription.history.find(
+    (x: any) => x.id === selected && x.status === "pending",
+  );
+  const uri =
+    data.pricing.upiId && order
+      ? "upi://pay?" +
+        new URLSearchParams({
+          pa: data.pricing.upiId,
+          pn: data.pricing.payee,
+          am: Number(order.amount).toFixed(2),
+          cu: "INR",
+          tn: "Shopkeeper wholesale " + order.plan,
+        }).toString()
+      : "";
+  useEffect(() => {
+    let live = true;
+    setQr("");
+    if (uri)
+      QRCode.toDataURL(uri, { width: 280, margin: 3 }).then(
+        (x) => live && setQr(x),
+      );
+    return () => {
+      live = false;
+    };
+  }, [uri]);
+  async function choose(plan: string) {
+    try {
+      const pending = data.subscription.history.find(
+        (x: any) => x.plan === plan && x.status === "pending",
+      );
+      if (pending) {
+        setSelected(pending.id);
+        return;
+      }
+      const d = await api("/api/wholesale/subscriptions/order", {
+        id: crypto.randomUUID(),
+        plan,
+      });
+      setSelected(d.id);
+      await reload();
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  return (
+    <div className="pricing-page">
+      <div className="pricing-grid">
+        <article className="panel price-card">
+          <h2>Free trial</h2>
+          <strong className="plan-price">₹0</strong>
+          <p>{data.pricing.trialDays} days</p>
+          <p>
+            Explore wholesale products, vendor requests, returns, payments, and
+            reports.
+          </p>
+        </article>
+        {(["monthly", "yearly"] as const).map((plan) => (
+          <article
+            className={
+              "panel price-card " + (plan === "yearly" ? "featured" : "")
+            }
+            key={plan}
+          >
+            <h2>{plan === "monthly" ? "Monthly" : "Yearly"}</h2>
+            <strong className="plan-price">
+              {money(Number(data.pricing[plan]))}
+            </strong>
+            <p>{plan === "monthly" ? "30 days" : "365 days"}</p>
+            <button className="btn primary" onClick={() => void choose(plan)}>
+              Choose {plan}
+            </button>
+          </article>
+        ))}
+      </div>
+      {message && <p className="notice error">{message}</p>}
+      {order && (
+        <section className="panel payment-panel">
+          <h2>Pay {money(Number(order.amount))}</h2>
+          {qr && (
+            <img
+              className="payment-qr"
+              src={qr}
+              alt="Wholesale subscription UPI QR code"
+            />
+          )}
+          {uri ? (
+            <a className="btn primary" href={uri}>
+              Open UPI app
+            </a>
+          ) : (
+            <p className="notice">
+              Ask the administrator to configure the wholesale UPI payment ID.
+            </p>
+          )}
+          <PaymentProof
+            wholesale
+            paymentId={order.id}
+            hasProof={order.has_proof}
+            upload
+            onUploaded={reload}
+          />
+          <form
+            className="form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              try {
+                await api("/api/wholesale/subscriptions/reference", {
+                  id: order.id,
+                  reference: f.get("reference"),
+                });
+                setMessage("Payment submitted for administrator approval.");
+                await reload();
+              } catch (e) {
+                setMessage((e as Error).message);
+              }
+            }}
+          >
+            <label>
+              UPI transaction reference
+              <input
+                name="reference"
+                required
+                minLength={4}
+                defaultValue={order.reference}
+              />
+            </label>
+            <button className="btn">Submit payment reference</button>
+          </form>
+        </section>
+      )}
+      <section className="panel table-scroll">
+        <h2>Subscription history</h2>
+        <table className="ledger-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Plan</th>
+              <th>Amount</th>
+              <th>Days</th>
+              <th>Status</th>
+              <th>Valid until</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.subscription.history.map((x: any) => (
+              <tr key={x.id}>
+                <td>
+                  {new Date(Number(x.created_at)).toLocaleDateString("en-IN")}
+                </td>
+                <td>{x.plan || x.kind}</td>
+                <td>{money(Number(x.amount))}</td>
+                <td>{x.days}</td>
+                <td>
+                  <span className={"badge " + statusTone(x.status)}>
+                    {x.status}
+                  </span>
+                </td>
+                <td>
+                  {x.valid_until
+                    ? new Date(Number(x.valid_until)).toLocaleDateString(
+                        "en-IN",
+                      )
+                    : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!data.subscription.history.length && (
+          <p className="empty-inline">No subscription history yet.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+function WholesaleSettings({
+  data,
+  reload,
+}: {
+  data: any;
+  post: (p: string, b: any) => Promise<void>;
+  reload: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  async function logo(file?: File) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      await api("/api/wholesale/logo", {
+        image: await prepareImage(file, true),
+      });
+      setMessage("Logo updated.");
+      await reload();
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveProfile(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.currentTarget));
+    setBusy(true);
+    try {
+      await api("/api/marketplace/profile", {
+        ...f,
+        minOrder: Number(f.minOrder),
+        deliveryDays: Number(f.deliveryDays),
+      });
+      setMessage("Marketplace profile saved.");
+      await reload();
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="settings-grid">
+      <section className="panel padded logo-settings">
+        <h2>Wholesale logo</h2>
+        {data.profile.logo_image && (
+          <img
+            className="logo-preview"
+            src={data.profile.logo_image}
+            alt="Current wholesale logo"
+          />
+        )}
+        <label className="btn">
+          <Upload size={16} />
+          {busy ? "Uploading…" : "Upload logo"}
+          <input
+            hidden
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(e) => {
+              void logo(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {data.profile.logo_image && (
+          <button
+            className="text-button"
+            onClick={async () => {
+              await api("/api/wholesale/logo", { remove: true });
+              await reload();
+            }}
+          >
+            Remove logo
+          </button>
+        )}
+        <p role="status">{message}</p>
+      </section>
+      <section className="panel padded">
+        <div className="panel-heading">
+          <div>
+            <h2>Marketplace profile</h2>
+            <p>
+              Complete profiles are easier for vendors to discover and trust.
+            </p>
+          </div>
+          {data.profile.verified && (
+            <span className="badge green">
+              <BadgeCheck size={14} /> Verified
+            </span>
+          )}
+        </div>
+        <form className="form" onSubmit={saveProfile}>
+          <label>
+            Contact name
+            <input name="name" defaultValue={data.profile.name} required />
+          </label>
+          <label>
+            Business name
+            <input
+              name="businessName"
+              defaultValue={data.profile.business_name}
+              required
+            />
+          </label>
+          <label>
+            GST number
+            <input name="gstNumber" defaultValue={data.profile.gst_number} />
+          </label>
+          <label>
+            Phone
+            <input name="phone" defaultValue={data.profile.phone} />
+          </label>
+          <label>
+            Address
+            <textarea name="address" defaultValue={data.profile.address} />
+          </label>
+          <label>
+            Service areas
+            <input
+              name="serviceAreas"
+              defaultValue={data.profile.service_areas}
+              placeholder="Hosur, Krishnagiri, Bengaluru"
+            />
+          </label>
+          <label>
+            Brands distributed
+            <textarea
+              name="brands"
+              defaultValue={data.profile.brands}
+              placeholder="Brand names separated by commas"
+            />
+          </label>
+          <label>
+            Minimum order value
+            <input
+              name="minOrder"
+              type="number"
+              min="0"
+              step=".01"
+              defaultValue={data.profile.min_order || 0}
+              required
+            />
+          </label>
+          <label>
+            Normal delivery days
+            <input
+              name="deliveryDays"
+              type="number"
+              min="0"
+              max="90"
+              defaultValue={data.profile.delivery_days || 2}
+              required
+            />
+          </label>
+          <label>
+            Catalogue visibility
+            <select
+              name="visibilityMode"
+              defaultValue={data.profile.visibility_mode || "selected"}
+            >
+              <option value="selected">Approved vendors only</option>
+              <option value="public">All active vendors</option>
+            </select>
+          </label>
+          <button className="btn primary" disabled={busy}>
+            Save marketplace profile
+          </button>
+        </form>
+      </section>
+      <section className="panel padded">
+        <div className="panel-heading">
+          <div>
+            <h2>Vendor payment QR</h2>
+            <p>Vendors use this UPI ID after receiving an order.</p>
+          </div>
+          <IndianRupee />
+        </div>
+        <form
+          className="form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            setBusy(true);
+            try {
+              await api("/api/marketplace/payment-settings", {
+                upiId: f.get("upiId"),
+                payeeName: f.get("payeeName"),
+              });
+              setMessage("Vendor payment QR settings saved.");
+              await reload();
+            } catch (error) {
+              setMessage((error as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <label>
+            UPI ID
+            <input
+              name="upiId"
+              defaultValue={data.profile.payment_upi_id || ""}
+              placeholder="business@bank"
+              required
+            />
+          </label>
+          <label>
+            Payment name
+            <input
+              name="payeeName"
+              defaultValue={
+                data.profile.payment_payee_name || data.profile.business_name
+              }
+              required
+            />
+          </label>
+          <button className="btn primary" disabled={busy}>
+            Save payment settings
+          </button>
+        </form>
+      </section>
+      <section className="panel padded">
+        <h2>Account security</h2>
+        <p>{data.profile.email}</p>
+        <PasswordChange />
+      </section>
+    </div>
+  );
+}
+function PasswordChange() {
+  return (
+    <form
+      className="form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        await api("/api/auth/password", {
+          currentPassword: f.get("current"),
+          password: f.get("password"),
+        });
+        location.reload();
+      }}
+    >
+      <label>
+        Current password
+        <PasswordInput
+          name="current"
+          required
+          autoComplete="current-password"
+        />
+      </label>
+      <label>
+        New password
+        <PasswordInput
+          name="password"
+          required
+          minLength={12}
+          maxLength={128}
+          autoComplete="new-password"
+        />
+      </label>
+      <button className="btn primary">Change password</button>
+    </form>
+  );
+}
 
-export function WholesalerManagement(){const [rows,setRows]=useState<any[]>([]),[message,setMessage]=useState(''),[reset,setReset]=useState('');async function load(){try{setRows((await api('/api/wholesalers')).wholesalers)}catch(e){setMessage((e as Error).message)}}useEffect(()=>{void load()},[]);return <section className="panel padded"><h2>Wholesale seller accounts</h2><p role="status">{message}</p>{reset&&<div className="notice break-anywhere">{reset}</div>}<form className="form-grid" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);try{await api('/api/wholesalers',Object.fromEntries(f));form.reset();setMessage('Wholesale seller created.');await load()}catch(e){setMessage((e as Error).message)}}}><input name="name" placeholder="Contact name" required/><input name="businessName" placeholder="Wholesale business" required/><input name="email" type="email" placeholder="Email" required/><PasswordInput name="password" placeholder="Initial password" minLength={12} maxLength={128} required/><input name="phone" placeholder="Phone"/><input name="address" placeholder="Address"/><button className="btn primary">Add wholesale seller</button></form>{rows.map(r=><div className="record-row" key={r.id}><div><b>{r.business_name}</b><small>{r.name} · {r.email}</small></div><span className={'badge '+(r.disabled?'amber':'green')}>{r.disabled?'Disabled':'Active'}</span><div className="actions"><button className="btn" onClick={async()=>{await api('/api/wholesalers/'+r.id,{action:r.disabled?'enable':'disable'});await load()}}>{r.disabled?'Enable':'Disable'}</button><button className="text-button" onClick={async()=>{const d=await api('/api/wholesalers/'+r.id,{action:'reset'});setReset(location.origin+'/wholesale/login#reset='+encodeURIComponent(d.code))}}>Reset password</button></div></div>)}</section>}
+export function WholesalerManagement() {
+  const [rows, setRows] = useState<any[]>([]),
+    [message, setMessage] = useState(""),
+    [reset, setReset] = useState("");
+  async function load() {
+    try {
+      setRows((await api("/api/wholesalers")).wholesalers);
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  return (
+    <section className="panel padded">
+      <h2>Wholesale seller accounts</h2>
+      <p role="status">{message}</p>
+      {reset && <div className="notice break-anywhere">{reset}</div>}
+      <form
+        className="form-grid"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const form = e.currentTarget,
+            f = new FormData(form);
+          try {
+            await api("/api/wholesalers", Object.fromEntries(f));
+            form.reset();
+            setMessage("Wholesale seller created.");
+            await load();
+          } catch (e) {
+            setMessage((e as Error).message);
+          }
+        }}
+      >
+        <input name="name" placeholder="Contact name" required />
+        <input name="businessName" placeholder="Wholesale business" required />
+        <input name="email" type="email" placeholder="Email" required />
+        <PasswordInput
+          name="password"
+          placeholder="Initial password"
+          minLength={12}
+          maxLength={128}
+          required
+        />
+        <input name="phone" placeholder="Phone" />
+        <input name="address" placeholder="Address" />
+        <button className="btn primary">Add wholesale seller</button>
+      </form>
+      {rows.map((r) => (
+        <div className="record-row" key={r.id}>
+          <div>
+            <b>{r.business_name}</b>
+            <small>
+              {r.name} · {r.email}
+            </small>
+          </div>
+          <span className={"badge " + (r.disabled ? "amber" : "green")}>
+            {r.disabled ? "Disabled" : "Active"}
+          </span>
+          <div className="actions">
+            <button
+              className="btn"
+              onClick={async () => {
+                await api("/api/wholesalers/" + r.id, {
+                  action: r.disabled ? "enable" : "disable",
+                });
+                await load();
+              }}
+            >
+              {r.disabled ? "Enable" : "Disable"}
+            </button>
+            <button
+              className="text-button"
+              onClick={async () => {
+                const d = await api("/api/wholesalers/" + r.id, {
+                  action: "reset",
+                });
+                setReset(
+                  location.origin +
+                    "/wholesale/login#reset=" +
+                    encodeURIComponent(d.code),
+                );
+              }}
+            >
+              Reset password
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
 
-export function WholesalePricingAdmin(){const [config,setConfig]=useState<any>(),[message,setMessage]=useState('');useEffect(()=>{api('/api/wholesale/pricing').then(setConfig).catch(e=>setMessage(e.message))},[]);if(!config)return <section className="panel padded"><h2>Wholesale pricing</h2><p>{message||'Loading…'}</p></section>;return <section className="panel padded"><h2>Wholesale pricing & UPI</h2><p>New wholesale accounts receive the free trial. Payments require manual approval.</p><form className="form" key={config.version} onSubmit={async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));try{const d=await api('/api/wholesale/pricing',{...f,version:config.version,monthly:Number(f.monthly),yearly:Number(f.yearly),trialDays:Number(f.trialDays)});setConfig(d);setMessage('Wholesale pricing saved.')}catch(e){setMessage((e as Error).message)}}}><label>Free trial days<input name="trialDays" type="number" min="1" max="90" defaultValue={config.trialDays} required/></label><label>30-day price (₹)<input name="monthly" type="number" min="1" step=".01" defaultValue={config.monthly} required/></label><label>Yearly price (₹)<input name="yearly" type="number" min="1" step=".01" defaultValue={config.yearly} required/></label><label>UPI ID<input name="upiId" defaultValue={config.upiId} placeholder="name@bank"/></label><label>Payee name<input name="payee" defaultValue={config.payee} required/></label><label>Heading<input name="headline" defaultValue={config.headline} required/></label><button className="btn primary">Save wholesale pricing</button><p role="status">{message}</p></form></section>}
+export function WholesalePricingAdmin() {
+  const [config, setConfig] = useState<any>(),
+    [message, setMessage] = useState("");
+  useEffect(() => {
+    api("/api/wholesale/pricing")
+      .then(setConfig)
+      .catch((e) => setMessage(e.message));
+  }, []);
+  if (!config)
+    return (
+      <section className="panel padded">
+        <h2>Wholesale pricing</h2>
+        <p>{message || "Loading…"}</p>
+      </section>
+    );
+  return (
+    <section className="panel padded">
+      <h2>Wholesale pricing & UPI</h2>
+      <p>
+        New wholesale accounts receive the free trial. Payments require manual
+        approval.
+      </p>
+      <form
+        className="form"
+        key={config.version}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const f = Object.fromEntries(new FormData(e.currentTarget));
+          try {
+            const d = await api("/api/wholesale/pricing", {
+              ...f,
+              version: config.version,
+              monthly: Number(f.monthly),
+              yearly: Number(f.yearly),
+              trialDays: Number(f.trialDays),
+            });
+            setConfig(d);
+            setMessage("Wholesale pricing saved.");
+          } catch (e) {
+            setMessage((e as Error).message);
+          }
+        }}
+      >
+        <label>
+          Free trial days
+          <input
+            name="trialDays"
+            type="number"
+            min="1"
+            max="90"
+            defaultValue={config.trialDays}
+            required
+          />
+        </label>
+        <label>
+          30-day price (₹)
+          <input
+            name="monthly"
+            type="number"
+            min="1"
+            step=".01"
+            defaultValue={config.monthly}
+            required
+          />
+        </label>
+        <label>
+          Yearly price (₹)
+          <input
+            name="yearly"
+            type="number"
+            min="1"
+            step=".01"
+            defaultValue={config.yearly}
+            required
+          />
+        </label>
+        <label>
+          UPI ID
+          <input
+            name="upiId"
+            defaultValue={config.upiId}
+            placeholder="name@bank"
+          />
+        </label>
+        <label>
+          Payee name
+          <input name="payee" defaultValue={config.payee} required />
+        </label>
+        <label>
+          Heading
+          <input name="headline" defaultValue={config.headline} required />
+        </label>
+        <button className="btn primary">Save wholesale pricing</button>
+        <p role="status">{message}</p>
+      </form>
+    </section>
+  );
+}
 
-export function WholesaleValidityAdmin(){const [rows,setRows]=useState<any[]>([]),[message,setMessage]=useState('');async function load(){try{setRows((await api('/api/wholesalers')).wholesalers)}catch(e){setMessage((e as Error).message)}}useEffect(()=>{void load()},[]);return <section className="panel padded"><h2>Wholesale subscription validity</h2><div className="table-scroll"><table className="ledger-table"><thead><tr><th>Wholesale seller</th><th>Period</th><th>Days remaining</th><th>Valid until</th><th>Extend</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td><b>{r.business_name}</b><small className="block-text">{r.email}</small></td><td>{r.period}</td><td>{r.daysRemaining}</td><td>{r.validUntil?new Date(r.validUntil).toLocaleDateString('en-IN'):'—'}</td><td><button className="btn" onClick={async()=>{const value=prompt('Days to add to the remaining validity','30'),days=Number(value);if(!value)return;try{await api('/api/wholesale/subscriptions/extend',{wholesalerId:r.id,days,reason:'Administrator extension'});setMessage(days+' days added.');await load()}catch(e){setMessage((e as Error).message)}}}>Extend</button></td></tr>)}</tbody></table></div><p role="status">{message}</p></section>}
+export function WholesaleValidityAdmin() {
+  const [rows, setRows] = useState<any[]>([]),
+    [message, setMessage] = useState("");
+  async function load() {
+    try {
+      setRows((await api("/api/wholesalers")).wholesalers);
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  return (
+    <section className="panel padded">
+      <h2>Wholesale subscription validity</h2>
+      <div className="table-scroll">
+        <table className="ledger-table">
+          <thead>
+            <tr>
+              <th>Wholesale seller</th>
+              <th>Period</th>
+              <th>Days remaining</th>
+              <th>Valid until</th>
+              <th>Extend</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td>
+                  <b>{r.business_name}</b>
+                  <small className="block-text">{r.email}</small>
+                </td>
+                <td>{r.period}</td>
+                <td>{r.daysRemaining}</td>
+                <td>
+                  {r.validUntil
+                    ? new Date(r.validUntil).toLocaleDateString("en-IN")
+                    : "—"}
+                </td>
+                <td>
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      const value = prompt(
+                          "Days to add to the remaining validity",
+                          "30",
+                        ),
+                        days = Number(value);
+                      if (!value) return;
+                      try {
+                        await api("/api/wholesale/subscriptions/extend", {
+                          wholesalerId: r.id,
+                          days,
+                          reason: "Administrator extension",
+                        });
+                        setMessage(days + " days added.");
+                        await load();
+                      } catch (e) {
+                        setMessage((e as Error).message);
+                      }
+                    }}
+                  >
+                    Extend
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p role="status">{message}</p>
+    </section>
+  );
+}
