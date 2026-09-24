@@ -11,6 +11,7 @@ export const pagePaths: Record<string, string> = {
   Expenses: "expenses",
   Settings: "settings",
   Vendors: "vendors",
+  Wholesale: "wholesale",
   "Vendor access": "vendor-access",
   "Subscription approvals": "subscription-approvals",
   "Scan bill": "scan-bill",
