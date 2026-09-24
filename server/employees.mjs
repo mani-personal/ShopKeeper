@@ -4,12 +4,14 @@ import {
   hashPassword,
   requireVendor,
   requireEmployeePermission,
+  employeePermissions,
   EMPLOYEE_PERMISSIONS,
   wholesalePrincipal,
 } from "./security.mjs";
 import { transaction } from "./db.mjs";
 import { recordActivity } from "./activities.mjs";
 import { requireWholesaleActive } from "./wholesale-subscriptions.mjs";
+import { employeeAccess } from "./designations.mjs";
 
 const bad = (message, status = 400) =>
   Object.assign(Error(message), { status });
@@ -21,7 +23,7 @@ const name = (value) =>
 async function vendorTeam(db, vendorId) {
   const rows = await db
     .prepare(
-      `SELECT u.id,u.name,u.email,u.created_at,u.employee_permissions FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.vendor_id=? AND u.role='vendor' AND u.employee_permissions IS NOT NULL ORDER BY u.created_at`,
+      `SELECT u.id,u.name,u.email,u.created_at,u.employee_permissions,u.employee_designation FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.vendor_id=? AND u.role='vendor' AND u.employee_permissions IS NOT NULL ORDER BY u.created_at`,
     )
     .all(vendorId);
   return rows.map((row) => ({
@@ -33,7 +35,7 @@ async function vendorTeam(db, vendorId) {
 async function wholesaleTeam(db, wholesalerId) {
   const rows = await db
     .prepare(
-      `SELECT u.id,u.name,u.email,u.created_at,u.employee_permissions FROM users u JOIN wholesale_memberships m ON m.user_id=u.id WHERE m.wholesaler_id=? AND u.employee_permissions IS NOT NULL ORDER BY u.created_at`,
+      `SELECT u.id,u.name,u.email,u.created_at,u.employee_permissions,u.employee_designation FROM users u JOIN wholesale_memberships m ON m.user_id=u.id WHERE m.wholesaler_id=? AND u.employee_permissions IS NOT NULL ORDER BY u.created_at`,
     )
     .all(wholesalerId);
   return rows.map((row) => ({
@@ -77,8 +79,9 @@ export function registerEmployeeRoutes(app, db) {
     if (!displayName) throw bad("Enter the employee name.");
     const passwordHash = await hashPassword(req.body.password),
       id = randomUUID(),
-      access = cleanPermissions(req.body.permissions);
-    if (!access.length) throw bad("Choose at least one employee permission.");
+      designation = req.body.designation,
+      type = req.user.role === "wholesale" ? "wholesale" : "vendor",
+      access = employeeAccess(type, designation, cleanPermissions(req.body.permissions), employeePermissions(req.user));
     if (req.user.role === "wholesale") {
       requireEmployeePermission(req.user, "employees");
       await requireWholesaleActive(db, req.user);
@@ -88,9 +91,9 @@ export function registerEmployeeRoutes(app, db) {
           throw bad("An account already uses this email.", 409);
         await db
           .prepare(
-            "INSERT INTO users(id,email,password_hash,role,name,created_at,employee_permissions) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO users(id,email,password_hash,role,name,created_at,employee_permissions,employee_designation) VALUES(?,?,?,?,?,?,?,?)",
           )
-          .run(id, mail, passwordHash, "wholesale", displayName, Date.now(), JSON.stringify(access));
+          .run(id, mail, passwordHash, "wholesale", displayName, Date.now(), JSON.stringify(access), designation);
         await db
           .prepare(
             "INSERT INTO wholesale_memberships(user_id,wholesaler_id,created_at) VALUES(?,?,?)",
@@ -115,9 +118,9 @@ export function registerEmployeeRoutes(app, db) {
         throw bad("An account already uses this email.", 409);
       await db
         .prepare(
-          "INSERT INTO users(id,email,password_hash,role,name,created_at,employee_permissions) VALUES(?,?,?,?,?,?,?)",
+          "INSERT INTO users(id,email,password_hash,role,name,created_at,employee_permissions,employee_designation) VALUES(?,?,?,?,?,?,?,?)",
         )
-        .run(id, mail, passwordHash, "vendor", displayName, Date.now(), JSON.stringify(access));
+        .run(id, mail, passwordHash, "vendor", displayName, Date.now(), JSON.stringify(access), designation);
       await db
         .prepare("INSERT INTO memberships(user_id,vendor_id) VALUES(?,?)")
         .run(id, vendor.id);
@@ -162,26 +165,37 @@ export function registerEmployeeRoutes(app, db) {
   });
 
   app.post("/api/employees/:id/permissions", async (req, res) => {
-    const access = cleanPermissions(req.body.permissions);
-    if (!access.length) throw bad("Choose at least one employee permission.");
+    const type = req.user.role === "wholesale" ? "wholesale" : "vendor",
+      designation = req.body.designation,
+      access = employeeAccess(type, designation, cleanPermissions(req.body.permissions), employeePermissions(req.user));
     requireEmployeePermission(req.user, "employees");
     if (req.user.role === "wholesale") {
       const wholesalerId = await wholesalePrincipal(db, req.user),
+        existing = await db.prepare("SELECT u.employee_designation FROM users u JOIN wholesale_memberships m ON m.user_id=u.id WHERE u.id=? AND m.wholesaler_id=? AND u.employee_permissions IS NOT NULL")
+          .get(req.params.id, wholesalerId);
+      if (!existing || (designation === "custom" && existing.employee_designation !== "custom"))
+        throw bad("Employee designation cannot be changed to custom.", 400);
+      const
         result = await db
           .prepare(
-            "UPDATE users SET employee_permissions=? WHERE id=? AND employee_permissions IS NOT NULL AND EXISTS(SELECT 1 FROM wholesale_memberships WHERE user_id=users.id AND wholesaler_id=?)",
+            "UPDATE users SET employee_permissions=?,employee_designation=? WHERE id=? AND employee_permissions IS NOT NULL AND EXISTS(SELECT 1 FROM wholesale_memberships WHERE user_id=users.id AND wholesaler_id=?)",
           )
-          .run(JSON.stringify(access), req.params.id, wholesalerId);
+          .run(JSON.stringify(access), designation, req.params.id, wholesalerId);
       if (!result.changes) throw bad("Employee not found.", 404);
       await db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.params.id);
       return res.json({ employees: await wholesaleTeam(db, wholesalerId) });
     }
     const vendor = await requireVendor(db, req.user, req.body.vendorId),
+      existing = await db.prepare("SELECT u.employee_designation FROM users u JOIN memberships m ON m.user_id=u.id WHERE u.id=? AND m.vendor_id=? AND u.employee_permissions IS NOT NULL")
+        .get(req.params.id, vendor.id);
+    if (!existing || (designation === "custom" && existing.employee_designation !== "custom"))
+      throw bad("Employee designation cannot be changed to custom.", 400);
+    const
       result = await db
         .prepare(
-          "UPDATE users SET employee_permissions=? WHERE id=? AND employee_permissions IS NOT NULL AND EXISTS(SELECT 1 FROM memberships WHERE user_id=users.id AND vendor_id=?)",
+          "UPDATE users SET employee_permissions=?,employee_designation=? WHERE id=? AND employee_permissions IS NOT NULL AND EXISTS(SELECT 1 FROM memberships WHERE user_id=users.id AND vendor_id=?)",
         )
-        .run(JSON.stringify(access), req.params.id, vendor.id);
+        .run(JSON.stringify(access), designation, req.params.id, vendor.id);
     if (!result.changes) throw bad("Employee not found.", 404);
     await db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.params.id);
     res.json({ employees: await vendorTeam(db, vendor.id) });
