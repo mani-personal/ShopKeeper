@@ -35,6 +35,8 @@ import {
   requirePermission,
   hasPermission,
   permissions,
+  employeePermissions,
+  requireEmployeePermission,
   requireActiveAccount,
   suspensionError,
   isAdmin,
@@ -225,6 +227,7 @@ export function createApp(
         role: req.user.role,
         name: req.user.name,
         permissions: permissions(req.user),
+        employeePermissions: employeePermissions(req.user),
       },
       csrf: req.user.csrf,
     }),
@@ -268,7 +271,19 @@ export function createApp(
     const rows = await allowedVendors(db, user);
     if (id) await requireVendor(db, user, id);
     const row = rows.find((v) => v.id === id) ?? rows[0];
-    const can = (p) => user.role !== "admin" || hasPermission(user, p);
+    const can = (p) => {
+      if (user.role === "vendor") return employeePermissions(user).includes(p);
+      if (user.role !== "admin") return true;
+      const adminAlias = {
+        customers: "sales",
+        returns: "purchases",
+        payments: "purchases",
+        settings: "stores",
+        employees: "vendor_access",
+        dashboard: "stores",
+      }[p];
+      return hasPermission(user, adminAlias || p);
+    };
     const vendors = rows.map((v) => {
       const s = JSON.parse(v.data);
       return {
@@ -291,20 +306,19 @@ export function createApp(
       };
     });
     let state = row ? JSON.parse(row.data) : initial();
-    if (user.role === "admin") {
+    if (user.role === "admin" || user.role === "vendor") {
       state = structuredClone(state);
-      if (!can("inventory")) state.products = [];
-      if (!can("sales")) {
-        state.sales = [];
-        state.customers = [];
-      }
+      if (!can("inventory") && !can("sales")) state.products = [];
+      if (!can("sales")) state.sales = [];
+      if (!can("customers")) state.customers = [];
       if (!can("purchases")) {
         state.purchases = [];
-        state.suppliers = [];
-        state.supplierReturns = [];
-        state.supplierPayments = [];
         state.imports = [];
       }
+      if (!can("purchases") && !can("returns") && !can("payments"))
+        state.suppliers = [];
+      if (!can("returns")) state.supplierReturns = [];
+      if (!can("payments")) state.supplierPayments = [];
       if (!can("reports")) state.expenses = [];
     }
     return {
@@ -316,7 +330,8 @@ export function createApp(
       vendorId: row?.id ?? "",
       vendors,
       role: user.role,
-      permissions: permissions(user),
+      permissions:
+        user.role === "vendor" ? employeePermissions(user) : permissions(user),
       email: user.email,
       ...(isAdmin(user) && hasPermission(user, "vendor_access")
         ? { access: await access() }
@@ -339,6 +354,9 @@ export function createApp(
     res.json({ ok: true });
   });
   app.get("/api/vendors/:id/products", async (req, res) => {
+    if (req.user.role === "vendor" &&
+        !["inventory", "sales"].some((permission) => employeePermissions(req.user).includes(permission)))
+      requireEmployeePermission(req.user, "inventory");
     if (
       isAdmin(req.user) &&
       !hasPermission(req.user, "inventory") &&
@@ -356,6 +374,9 @@ export function createApp(
     });
   });
   app.get("/api/vendors/:id/barcode/:code", async (req, res) => {
+    if (req.user.role === "vendor" &&
+        !["inventory", "sales"].some((permission) => employeePermissions(req.user).includes(permission)))
+      requireEmployeePermission(req.user, "sales");
     if (
       isAdmin(req.user) &&
       !hasPermission(req.user, "inventory") &&
@@ -550,6 +571,21 @@ export function createApp(
               settings: "stores",
             }[a.type];
             if (needed) requirePermission(user, needed);
+          } else if (user.role === "vendor") {
+            const needed = {
+              product: "inventory",
+              inventory_import: "inventory",
+              sale: "sales",
+              purchase: "purchases",
+              bill_import: "purchases",
+              supplier_return: "returns",
+              supplier_payment: "payments",
+              purchase_settlement: "payments",
+              contact: "customers",
+              expense: "reports",
+              settings: "settings",
+            }[a.type];
+            if (needed) requireEmployeePermission(user, needed);
           }
           const key = [
             "sale",
