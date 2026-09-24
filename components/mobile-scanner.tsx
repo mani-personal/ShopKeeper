@@ -21,9 +21,9 @@ async function makeReader(){
   return new BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:150});
 }
 
-export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>void;onScan:(code:string)=>void}){
+export function MobileScanner({open,onClose,onScan,multi=false,onScanMany}:{open:boolean;onClose:()=>void;onScan:(code:string)=>void;multi?:boolean;onScanMany?:(codes:string[])=>void}){
   const video=useRef<HTMLVideoElement>(null);
-  const callbacks=useRef({onScan,onClose});callbacks.current={onScan,onClose};
+  const callbacks=useRef({onScan,onClose,onScanMany});callbacks.current={onScan,onClose,onScanMany};
   const generation=useRef(0),consumed=useRef(false);
   const stop=useRef<()=>void>(()=>{});
   const track=useRef<MediaStreamTrack|null>(null);
@@ -32,19 +32,27 @@ export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>vo
   const [code,setCode]=useState(''),[retry,setRetry]=useState(0);
   const [status,setStatus]=useState(''),[caps,setCaps]=useState<CameraCaps>({});
   const [torch,setTorch]=useState(false),[zoom,setZoom]=useState(1);
+  const [entries,setEntries]=useState<Record<string,number>>({});
   function accept(value:string){
     if(consumed.current)return;
+    if(multi){
+      const normalized=value.trim();
+      if(!normalized)return;
+      setEntries(previous=>previous[normalized]?previous:{...previous,[normalized]:1});
+      navigator.vibrate?.(40);
+      return;
+    }
     consumed.current=true;stop.current();navigator.vibrate?.(80);
     callbacks.current.onScan(value);callbacks.current.onClose();
   }
   useEffect(()=>{
     if(!open)return;
     const session=++generation.current;
-    let cancelled=false,controls:{stop:()=>void}|undefined,stream:MediaStream|undefined;
+    let cancelled=false,controls:{stop:()=>void}|undefined,stream:MediaStream|undefined,nativeTimer:ReturnType<typeof setInterval>|undefined;
     consumed.current=false;setCode('');setError('');setCaps({});setTorch(false);
     setStatus('Starting camera…');
     const active=()=>!cancelled&&session===generation.current&&!consumed.current;
-    const shutdown=()=>{controls?.stop();stream?.getTracks().forEach(t=>t.stop())};
+    const shutdown=()=>{if(nativeTimer)clearInterval(nativeTimer);controls?.stop();stream?.getTracks().forEach(t=>t.stop())};
     stop.current=shutdown;
     async function start(){
       try{
@@ -69,7 +77,22 @@ export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>vo
           if(result&&active())accept(result.getText());
         });
         if(!active()){shutdown();return}
-        setStatus('Scanning… Keep the whole barcode and white space at both ends visible.');
+        if(multi){
+          const Detector=(window as any).BarcodeDetector;
+          if(Detector){
+            try{
+              const detector=new Detector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code','data_matrix']});
+              let reading=false;
+              nativeTimer=setInterval(async()=>{
+                if(reading||!active()||!video.current||video.current.readyState<2)return;
+                reading=true;
+                try{for(const hit of await detector.detect(video.current))if(active()&&hit.rawValue)accept(hit.rawValue)}catch{/* ZXing continues scanning */}
+                finally{reading=false}
+              },700);
+            }catch{/* ZXing continues scanning */}
+          }
+        }
+        setStatus(multi?'Scan each label in one session, then add the batch. Keep labels apart for photo detection.':'Scanning… Keep the whole barcode and white space at both ends visible.');
         try{
           const list=await navigator.mediaDevices.enumerateDevices();
           if(active())setDevices(list.filter(d=>d.kind==='videoinput'));
@@ -86,7 +109,8 @@ export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>vo
     }
     start();
     return()=>{cancelled=true;generation.current++;shutdown();track.current=null};
-  },[open,device,retry]);
+  },[open,device,retry,multi]);
+  useEffect(()=>{if(open)setEntries({})},[open]);
 
   async function adjust(values:{torch?:boolean;zoom?:number}){
     const camera=track.current,session=generation.current;if(!camera)return;
@@ -109,6 +133,7 @@ export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>vo
     try{
       const reader=await makeReader();
       const picture=new Image();picture.src=url;await picture.decode();
+      let found=0;
       // Retry at right-angle rotations so vertical retail barcodes are readable.
       for(const angle of [0,90,180,270]){
         if(session!==generation.current||consumed.current)return;
@@ -119,19 +144,58 @@ export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>vo
         const ctx=canvas.getContext('2d')!;
         ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(angle*Math.PI/180);
         ctx.drawImage(picture,-w/2,-h/2,w,h);
-        try{const result=reader.decodeFromCanvas(canvas);accept(result.getText());return}catch{/* try next rotation */}
+        if(multi){
+          const Detector=(window as any).BarcodeDetector;
+          if(Detector){
+            try{for(const hit of await new Detector().detect(canvas)){
+              if(hit.rawValue){accept(hit.rawValue);found++}
+            }}catch{/* crop-based decoder below */}
+          }
+          for(const divisions of [1,2,3]){
+            for(let row=0;row<divisions;row++)for(let col=0;col<divisions;col++){
+              if(session!==generation.current)return;
+              const tile=document.createElement('canvas'),
+                tileWidth=Math.min(canvas.width,Math.ceil(canvas.width/divisions*1.3)),
+                tileHeight=Math.min(canvas.height,Math.ceil(canvas.height/divisions*1.3)),
+                left=Math.max(0,Math.min(canvas.width-tileWidth,Math.floor(col*canvas.width/divisions-tileWidth*.15))),
+                top=Math.max(0,Math.min(canvas.height-tileHeight,Math.floor(row*canvas.height/divisions-tileHeight*.15)));
+              tile.width=tileWidth;tile.height=tileHeight;
+              tile.getContext('2d')!.drawImage(canvas,left,top,tileWidth,tileHeight,0,0,tileWidth,tileHeight);
+              try{accept(reader.decodeFromCanvas(tile).getText());found++}catch{/* scan next region */}
+            }
+          }
+        }else{
+          try{const result=reader.decodeFromCanvas(canvas);accept(result.getText());return}catch{/* try next rotation */}
+        }
       }
+      if(found){setStatus('Barcodes collected. Review and add the batch.');return}
       throw Error('No readable barcode found. Take a sharp photo with the entire barcode visible, or enter its printed number.');
     }catch(e){if(session===generation.current)setError((e as Error).message)}
     finally{URL.revokeObjectURL(url);if(session===generation.current)setStatus('Camera paused. Restart it to scan live.')}
   }
   return <Dialog open={open} onOpenChange={value=>{if(!value)callbacks.current.onClose()}}>
     <DialogContent className="mobile-scan-dialog">
-      <DialogTitle>Scan a product barcode</DialogTitle>
+      <DialogTitle>{multi?'Scan multiple product barcodes':'Scan a product barcode'}</DialogTitle>
       <DialogDescription>Start about 15–25 cm away. Keep the bars upright, avoid glare and hold steady. Move back if the label looks blurry.</DialogDescription>
       <video ref={video} playsInline autoPlay muted className="camera-video" style={{objectFit:'contain'}}/>
       {status&&<p role="status">{status}</p>}
       {error&&<div role="alert" className="notice error">{error}</div>}
+      {multi&&<div className="multi-scanned-list">
+        <b>{Object.keys(entries).length} unique products scanned</b>
+        {Object.entries(entries).map(([value,quantity])=><div className="multi-scanned-row" key={value}>
+          <span>{value}</span>
+          <button className="btn" type="button" aria-label={'Remove one '+value} onClick={()=>setEntries(previous=>{
+            const next={...previous};if(next[value]<=1)delete next[value];else next[value]--;return next;
+          })}>−</button>
+          <strong>{quantity}</strong>
+          <button className="btn" type="button" aria-label={'Add one '+value} onClick={()=>setEntries(previous=>({...previous,[value]:(previous[value]||0)+1}))}>+</button>
+        </div>)}
+        <button className="btn primary" disabled={!Object.keys(entries).length} onClick={()=>{
+          consumed.current=true;stop.current();
+          callbacks.current.onScanMany?.(Object.entries(entries).flatMap(([value,quantity])=>Array(quantity).fill(value)));
+          callbacks.current.onClose();
+        }}>Add {Object.values(entries).reduce((sum,count)=>sum+count,0)} scanned items</button>
+      </div>}
       {devices.length>1&&<Select value={device} onValueChange={setDevice}>
         <SelectTrigger aria-label="Choose camera"><SelectValue/></SelectTrigger>
         <SelectContent><SelectItem value="auto">Rear camera (automatic)</SelectItem>
@@ -149,9 +213,9 @@ export function MobileScanner({open,onClose,onScan}:{open:boolean;onClose:()=>vo
           <input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{void photo(e.target.files?.[0]);e.target.value=''}}/>
         </label>
       </div>
-      <form className="form" onSubmit={e=>{e.preventDefault();if(code.trim())accept(code.trim())}}>
+      <form className="form" onSubmit={e=>{e.preventDefault();if(code.trim()){accept(code.trim());setCode('')}}}>
         <label>Or enter the printed barcode number<input autoComplete="off" value={code} onChange={e=>setCode(e.target.value)} placeholder="Barcode number or item code"/></label>
-        <button className="btn primary" disabled={!code.trim()}><Camera size={16}/>Use this barcode</button>
+        <button className="btn primary" disabled={!code.trim()}><Camera size={16}/>{multi?'Add to batch':'Use this barcode'}</button>
       </form>
     </DialogContent>
   </Dialog>;
