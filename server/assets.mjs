@@ -6,6 +6,7 @@ import {
   isAdmin,
   requirePermission,
   wholesalePrincipal,
+  requireEmployeePermission,
 } from "./security.mjs";
 import { recordActivity } from "./activities.mjs";
 const bad = (message) => Object.assign(Error(message), { status: 400 });
@@ -49,6 +50,7 @@ async function raster(value, logo) {
 export function registerAssetRoutes(app, db) {
   app.post("/api/vendors/:id/logo", async (req, res) => {
     if (isAdmin(req.user)) requirePermission(req.user, "stores");
+    else requireEmployeePermission(req.user, "settings");
     await requireVendor(db, req.user, req.params.id);
     await limit(db, "logo:" + req.user.id, 30);
     const bytes =
@@ -115,6 +117,7 @@ export function registerAssetRoutes(app, db) {
     res.send(Buffer.from(proof.image));
   });
   app.post("/api/wholesale/logo", async (req, res) => {
+    requireEmployeePermission(req.user, "settings");
     if (req.user.role !== "wholesale")
       throw Object.assign(Error("Wholesale seller access required."), {
         status: 403,
