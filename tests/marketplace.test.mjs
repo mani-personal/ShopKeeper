@@ -25,6 +25,7 @@ test('direct wholesale order, delivery payment and vendor margin receiving',asyn
   assert.equal((await call('/api/wholesalers',{name:'Seller',businessName:'Hosur Foods',email:'seller@example.test',password:'Seller-password-123'},owner)).status,200);
   const wholesale=await login('seller@example.test','Seller-password-123','wholesale');
   assert.equal((await call('/api/marketplace/profile',{name:'Seller',businessName:'Hosur Foods',gstNumber:'33ABCDE1234F1Z5',phone:'8122187039',address:'Hosur',serviceAreas:'Hosur, Krishnagiri',brands:'RiceCo, FreshMart',minOrder:500,deliveryDays:2,visibilityMode:'public'},wholesale)).status,200);
+  assert.equal((await call('/api/marketplace/payment-settings',{upiId:'hosurfoods@upi',payeeName:'Hosur Foods'},wholesale)).status,200);
   assert.equal((await call('/api/marketplace/products',{name:'Premium rice',sku:'8901234567890',category:'Groceries',description:'25 kg restaurant pack',unit:'25 kg bag',price:900,mrp:1050,stock:50,minQty:2,bulkQty:10,bulkPrice:850,active:true},wholesale)).status,200);
   const admin=(await call('/api/marketplace/admin',undefined,owner)).data,seller=admin.sellers[0];
   assert.equal((await call('/api/marketplace/admin/verify',{wholesalerId:seller.user_id,verified:true},owner)).status,200);
@@ -35,11 +36,11 @@ test('direct wholesale order, delivery payment and vendor margin receiving',asyn
   r=await call('/api/marketplace/requests',{vendorId:'main',items:[{productId:product.id,quantity:2}],notes:'Deliver before noon'},vendor);
   assert.equal(r.status,200);
   const order=r.data.requests[0];
-  assert.equal(order.status,'approved','new orders skip quotation and vendor confirmation');
+  assert.equal(order.status,'pending','new orders wait for wholesaler confirmation');
+  assert.equal((await call('/api/marketplace/requests/'+order.id+'/status',{status:'approved'},wholesale)).status,200);
   assert.equal((await call('/api/marketplace/requests/'+order.id+'/status',{status:'packed'},wholesale)).status,200);
   assert.equal((await call('/api/marketplace/requests/'+order.id+'/payment',{paymentStatus:'partial',amount:500,reference:'Cash advance'},wholesale)).status,200);
   assert.equal((await call('/api/marketplace/requests/'+order.id+'/status',{status:'dispatched'},wholesale)).status,200);
-  assert.equal((await call('/api/marketplace/requests/'+order.id+'/payment',{paymentStatus:'paid',amount:1300,reference:'UPI balance'},wholesale)).status,200);
   assert.equal((await call('/api/marketplace/requests/'+order.id+'/status',{status:'delivered'},wholesale)).status,200);
   r=await call('/api/marketplace/requests/'+order.id+'/receive',{vendorId:'main',sellingPrices:{[product.id]:1020}},vendor);
   assert.equal(r.status,200);
@@ -48,6 +49,11 @@ test('direct wholesale order, delivery payment and vendor margin receiving',asyn
   assert.equal(received.stock,2);
   assert.equal(received.cost,900);
   assert.equal(received.price,1020,'vendor margin controls the selling price');
+  r=await call('/api/marketplace/requests/'+order.id+'/payment-submit',{vendorId:'main',amount:1300,reference:'UPI-426512345678'},vendor);
+  assert.equal(r.status,200,'vendor can submit UPI payment after receiving stock');
+  const pendingPayment=r.data.transactions.find(x=>x.submitted_by_vendor&&x.payment_status==='pending');
+  assert.ok(pendingPayment);
+  assert.equal((await call('/api/marketplace/payments/'+pendingPayment.id+'/confirm',{},wholesale)).status,200,'wholesaler confirms vendor payment');
   const payments=(await call('/api/marketplace/catalog?vendor=main',undefined,vendor)).data.transactions;
   assert.equal(payments.filter(x=>['partial','paid'].includes(x.payment_status)).reduce((n,x)=>n+Number(x.amount),0),1800);
   r=await call('/api/wholesale/returns',{vendorId:'main',requestId:order.id,productId:product.id,quantity:1,unitPrice:900,reason:'Damaged bag'},vendor);
@@ -60,6 +66,14 @@ test('direct wholesale order, delivery payment and vendor margin receiving',asyn
   assert.equal(Number(r.data.returns[0].quantity)*Number(r.data.returns[0].unit_price),900,'received return creates an automatic order credit');
   assert.equal((await call('/api/marketplace/reviews',{vendorId:'main',requestId:order.id,rating:5,comment:'Fast delivery'},vendor)).status,200);
   assert.equal((await call('/api/marketplace/requests/'+order.id+'/repeat',{vendorId:'main'},vendor)).status,200);
+  r=await call('/api/employees',{vendorId:'main',name:'Counter Staff',email:'counter@example.test',password:'Counter-password-123'},vendor);
+  assert.equal(r.status,200);
+  const vendorEmployee=await login('counter@example.test','Counter-password-123');
+  assert.equal((await call('/api/store?vendor=main',undefined,vendorEmployee)).status,200,'vendor employee uses the assigned store');
+  r=await call('/api/employees',{name:'Warehouse Staff',email:'warehouse@example.test',password:'Warehouse-password-123'},wholesale);
+  assert.equal(r.status,200);
+  const wholesaleEmployee=await login('warehouse@example.test','Warehouse-password-123','wholesale');
+  assert.equal((await call('/api/wholesale/portal',undefined,wholesaleEmployee)).status,200,'wholesale employee uses the parent console');
   assert.ok(Number((await call('/api/marketplace/admin',undefined,owner)).data.summary.orders)>=2);
  }finally{
   await new Promise(r=>server.close(r));
