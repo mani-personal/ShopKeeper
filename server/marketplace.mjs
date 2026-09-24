@@ -5,6 +5,8 @@ import {
   requirePermission,
   isAdmin,
   wholesalePrincipal,
+  requireEmployeePermission,
+  employeePermissions,
 } from "./security.mjs";
 import { recordActivity } from "./activities.mjs";
 import { roundMoney } from "./domain/store.mjs";
@@ -43,7 +45,7 @@ const storeName = (row) => {
 async function orderRows(db, where, value) {
   const rows = await db
     .prepare(
-      `SELECT r.*,w.business_name,w.logo_image,w.verified,w.payment_upi_id,w.payment_payee_name,v.data AS vendor_data,COALESCE(SUM(i.quantity*i.unit_price),0) AS item_total FROM wholesale_requests r JOIN wholesalers w ON w.user_id=r.wholesaler_id JOIN vendors v ON v.id=r.vendor_id LEFT JOIN wholesale_request_items i ON i.request_id=r.id WHERE ${where}=? GROUP BY r.id,w.business_name,w.logo_image,w.verified,w.payment_upi_id,w.payment_payee_name,v.data ORDER BY r.created_at DESC`,
+      `SELECT r.*,w.business_name,w.logo_image,w.verified,w.payment_upi_id,w.payment_payee_name,w.gst_number,w.address AS seller_address,v.data AS vendor_data,COALESCE(SUM(i.quantity*i.unit_price),0) AS item_total FROM wholesale_requests r JOIN wholesalers w ON w.user_id=r.wholesaler_id JOIN vendors v ON v.id=r.vendor_id LEFT JOIN wholesale_request_items i ON i.request_id=r.id WHERE ${where}=? GROUP BY r.id,w.business_name,w.logo_image,w.verified,w.payment_upi_id,w.payment_payee_name,w.gst_number,w.address,v.data ORDER BY r.created_at DESC`,
     )
     .all(value);
   const items = await db
@@ -116,17 +118,68 @@ async function paymentBalance(db, requestId) {
 
 export function registerMarketplaceRoutes(app, db) {
   app.use("/api/marketplace", async (req, _res, next) => {
-    if (req.user.role === "wholesale")
+    if (req.user.role === "wholesale") {
       req.wholesalerId = await wholesalePrincipal(db, req.user);
+      if (req.method !== "GET") {
+        const path = req.originalUrl.split("?")[0],
+          needed = path.includes("/products")
+            ? "inventory"
+            : path.includes("/profile") || path.includes("/payment-settings")
+              ? "settings"
+              : path.includes("/payment") || path.includes("/payments")
+                ? "payments"
+              : path.includes("/returns") || path.includes("/refund")
+                ? "returns"
+                : path.includes("/requests")
+                    ? "purchases"
+                    : null;
+        if (needed) requireEmployeePermission(req.user, needed);
+      }
+    } else if (req.user.role === "vendor") {
+      const path = req.originalUrl.split("?")[0];
+      const needed = path === "/api/marketplace/catalog"
+        ? null
+        : path === "/api/marketplace/favourite" || path.endsWith("/repeat")
+          ? "purchases"
+          : path.endsWith("/receive")
+            ? "inventory"
+            : path.endsWith("/payment-submit")
+              ? "payments"
+              : path.includes("/requests")
+                ? "purchases"
+                : path.includes("/reviews")
+                  ? "purchases"
+                  : null;
+      if (needed) requireEmployeePermission(req.user, needed);
+    }
     next();
   });
   app.get("/api/marketplace/catalog", async (req, res) => {
+    if (
+      req.user.role === "vendor" &&
+      !["purchases", "payments", "returns", "inventory"].some((section) =>
+        employeePermissions(req.user).includes(section),
+      )
+    )
+      requireEmployeePermission(req.user, "purchases");
     const vendor = await requireVendor(
       db,
       req.user,
       String(req.query.vendor || ""),
     );
-    res.json(await marketplaceCatalog(db, vendor.id));
+    const catalog = await marketplaceCatalog(db, vendor.id);
+    if (req.user.role === "vendor") {
+      const access = employeePermissions(req.user);
+      if (!access.includes("purchases")) catalog.products = [];
+      if (!access.some((section) => ["purchases", "payments", "returns", "inventory"].includes(section)))
+        catalog.requests = [];
+      if (!access.includes("returns")) {
+        catalog.returns = [];
+        catalog.refunds = [];
+      }
+      if (!access.includes("payments")) catalog.transactions = [];
+    }
+    res.json(catalog);
   });
   app.post("/api/marketplace/favourite", async (req, res) => {
     const vendor = await requireVendor(db, req.user, req.body.vendorId),
@@ -230,7 +283,9 @@ export function registerMarketplaceRoutes(app, db) {
       description =
         typeof p.description === "string"
           ? p.description.trim().slice(0, 500)
-          : "";
+          : "",
+      hsnCode = typeof p.hsnCode === "string" ? p.hsnCode.trim().slice(0, 20) : "",
+      gstRate = Number(p.gstRate ?? 0);
     if (
       !name ||
       !unit ||
@@ -248,12 +303,13 @@ export function registerMarketplaceRoutes(app, db) {
         p.bulkPrice != null &&
         (!amount(p.bulkPrice) ||
           Number(p.bulkPrice) <= 0 ||
-          Number(p.bulkPrice) >= Number(p.price)))
+          Number(p.bulkPrice) >= Number(p.price))) ||
+      ![0, 5, 12, 18, 28].includes(gstRate)
     )
       throw bad("Check product, MRP, MOQ, bulk price and stock.");
     await db
       .prepare(
-        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,bulk_price=EXCLUDED.bulk_price WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
+        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,bulk_price=EXCLUDED.bulk_price,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
       )
       .run(
         id,
@@ -272,6 +328,8 @@ export function registerMarketplaceRoutes(app, db) {
         Number(p.minQty),
         p.bulkQty === "" || p.bulkQty == null ? null : Number(p.bulkQty),
         p.bulkPrice === "" || p.bulkPrice == null ? null : Number(p.bulkPrice),
+        hsnCode,
+        gstRate,
       );
     await recordActivity(db, {
       actorId: req.user.id,
@@ -355,9 +413,9 @@ export function registerMarketplaceRoutes(app, db) {
               : Number(p.price);
         await db
           .prepare(
-            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price) VALUES(?,?,?,?)",
+            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?)",
           )
-          .run(id, p.id, quantity, unitPrice);
+          .run(id, p.id, quantity, unitPrice, p.hsn_code || "", Number(p.gst_rate || 0));
       }
     });
     await recordActivity(db, {
@@ -708,9 +766,9 @@ export function registerMarketplaceRoutes(app, db) {
       for (const x of lines)
         await db
           .prepare(
-            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price) VALUES(?,?,?,?)",
+            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?)",
           )
-          .run(id, x.product_id, x.quantity, x.price);
+          .run(id, x.product_id, x.quantity, x.price, x.hsn_code || "", Number(x.gst_rate || 0));
     });
     res.json(await marketplaceCatalog(db, vendor.id));
   });
