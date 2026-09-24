@@ -106,8 +106,9 @@ export async function migrate(db) {
       8: "marketplace_growth",
       9: "order_payments_employees",
       10: "employee_permissions_gst",
+      11: "categories_designations",
     };
-    for (const version of [3, 4, 5, 6, 7, 8, 9, 10])
+    for (const version of [3, 4, 5, 6, 7, 8, 9, 10, 11])
       if (
         !(
           await db.query(
