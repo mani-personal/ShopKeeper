@@ -261,7 +261,7 @@ export default function Home() {
     [lowOnly, setLowOnly] = useState(false),
     [modal, setModal] = useState(""),
     [product, setProduct] = useState<Product>(blank),
-    [cart, setCart] = useState<{ id: string; qty: number }[]>([]),
+    [cart, setCart] = useState<{ id: string; qty: number; unitPrice?: number }[]>([]),
     [barcode, setBarcode] = useState(""),
     [discount, setDiscount] = useState(0),
     [payment, setPayment] = useState("Cash"),
@@ -562,7 +562,8 @@ export default function Home() {
       (!lowOnly || isLow(p, s)),
   );
   const cartItems = cart
-      .map((x) => ({ ...s.products.find((p) => p.id === x.id)!, qty: x.qty }))
+      .map((x) => ({ ...s.products.find((p) => p.id === x.id)!, qty: x.qty,
+        ...(x.unitPrice !== undefined ? { price: x.unitPrice, discountMode: 'none' as const, customDiscount: 0 } : {}) }))
       .filter((x) => x.name),
     subtotal = roundMoney(cartItems.reduce((t, p) => t + p.price * p.qty, 0)),
     itemSavings = roundMoney(
@@ -708,7 +709,7 @@ export default function Home() {
                 </div>
               </TableCell>
               <TableCell className="mono">{p.barcode}</TableCell>
-              <TableCell>{p.category}</TableCell>
+              <TableCell>{p.category}{p.subcategory && <small className="block-text">{p.subcategory}</small>}</TableCell>
               <TableCell>
                 <b>{money(netPrice(p))}</b>
                 {productDiscount(p) > 0 && (
@@ -862,6 +863,7 @@ export default function Home() {
               .slice(7)
               .filter(
                 ([name]) =>
+                  !["Reports", "Settings", "Account", "Employees", "Support"].includes(name) &&
                   (name === "Super admin"
                     ? role === "owner"
                     : isAdmin ||
@@ -886,6 +888,12 @@ export default function Home() {
                 </SidebarMenuItem>
               ))}
           </SidebarMenu>
+          <details className="profile-menu">
+            <summary><Users size={18} /> Profile</summary>
+            {(["Account", "Settings", "Employees", "Support"] as const).filter(allowedPage).map((name) => (
+              <button type="button" key={name} className={view === name ? "active" : ""} onClick={() => go(name)}>{name}</button>
+            ))}
+          </details>
         </SidebarContent>
         <SidebarFooter>
           <button
@@ -1080,6 +1088,8 @@ export default function Home() {
             <>
               <h2>Today’s sales and profit</h2>
               <FinanceCards s={s} from={today} to={today} dashboard />
+              {(role === "owner" || permissions.includes("reports")) && <FinanceReport key={vendorId} s={s} />}
+              <section className="dashboard-help"><Support /></section>
               <div className="notice">
                 Current supplier payable:{" "}
                 <b>
@@ -1615,6 +1625,18 @@ export default function Home() {
                             {productDiscount(p) > 0 &&
                               " · " + money(productDiscount(p)) + " off"}
                           </small>
+                          <label className="sale-line-field">Quantity
+                            <input type="number" min="1" max={s.products.find((x) => x.id === p.id)?.stock || 1} step="1" value={p.qty}
+                              onChange={(e) => { const value = Number(e.target.value); const available = s.products.find((x) => x.id === p.id)?.stock || 0;
+                                if (Number.isInteger(value) && value >= 1 && value <= available)
+                                  setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, qty: value } : row)); }} />
+                          </label>
+                          <label className="sale-line-field">Selling price (₹)
+                            <input type="number" min="0" max={p.mrp ?? 10000000} step=".01" value={netPrice(p)}
+                              onChange={(e) => { if (e.target.value === '') return; const value = Number(e.target.value);
+                                if (Number.isFinite(value) && value >= 0 && value <= (p.mrp ?? 10000000) && Math.round(value * 100) === value * 100)
+                                  setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, unitPrice: value } : row)); }} />
+                          </label>
                           <div className="quantity">
                             <button
                               aria-label={"Decrease " + p.name}
@@ -2317,6 +2339,7 @@ export default function Home() {
                   busy={busy || loading}
                 />
               )}
+              {isAdmin && (role === "owner" || permissions.includes("pricing")) && <WholesalePricingAdmin />}
               <Pricing
                 key={vendorId}
                 s={s}
@@ -2514,6 +2537,11 @@ export default function Home() {
                     })
                   }
                 />
+              </label>
+              <p className="muted small">Each weight or package size needs its own product. If two sizes share a printed barcode, give one a separate internal item code so the scanner cannot select the wrong price.</p>
+              <label>Product subcategory
+                <input value={product.subcategory ?? ""} maxLength={100} placeholder="For example: Rice, biscuits, 500 ml packs"
+                  onChange={(e) => setProduct({ ...product, subcategory: e.target.value })} />
               </label>
               {product.mrp !== undefined && (
                 <button
