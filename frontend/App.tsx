@@ -114,6 +114,7 @@ import { PasswordInput } from "./password-input";
 import { SaleReceipt } from "@/components/sale-receipt";
 import { ProductLabel } from "@/components/product-label";
 import { parseProductCode } from "@/lib/product-label";
+import { prepareBarcodeBatch } from "@/lib/barcode-batch";
 import { ThemeToggle } from "./theme";
 import { Notifications } from "./notifications";
 import { Support } from "./support";
@@ -494,6 +495,14 @@ export default function Home() {
     } catch (e) {
       toast.error((e as Error).message);
     }
+  }
+  function scanBatch(codes: string[]) {
+    const result = prepareBarcodeBatch(codes, s.products, cart);
+    setCart(result.cart);
+    setView("Point of sale");
+    toast[result.missing.length ? "warning" : "success"](
+      `${result.added} items added. ${result.missing.length ? "Check unknown or unavailable codes: " + result.missing.join(", ") : "Ready to checkout."}`,
+    );
   }
   useEffect(() => {
     const ctx = (document as any).modelContext;
@@ -1488,7 +1497,8 @@ export default function Home() {
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label="Scan with camera"
+                      aria-label="Scan multiple barcodes with camera"
+                      title="Scan multiple barcodes"
                       onClick={() => setCamera(true)}
                     >
                       <Camera size={19} />
@@ -1925,6 +1935,23 @@ export default function Home() {
               logo={logo}
               onChange={setLogo}
             />
+          )}
+          {view === "Settings" && (
+            <section className="panel settings">
+              <div className="panel-heading"><div><h2>Store category</h2><p>Wholesalers in this category can discover your store.</p></div></div>
+              <form className="form" onSubmit={async (e) => {
+                e.preventDefault();
+                const businessType = String(new FormData(e.currentTarget).get("businessType"));
+                if (await act({ type: "vendor_category", businessType })) toast.success("Store category updated");
+              }}>
+                <label>Business category
+                  <select name="businessType" key={vendors.find((v) => v.id === vendorId)?.type} defaultValue={vendors.find((v) => v.id === vendorId)?.type || "General store"}>
+                    {businessTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </label>
+                <button className="btn primary" disabled={busy}>Save category</button>
+              </form>
+            </section>
           )}
           {view === "Settings" && (
             <section className="panel settings">
@@ -2729,6 +2756,8 @@ export default function Home() {
         open={camera}
         onClose={() => setCamera(false)}
         onScan={scanCode}
+        multi={view === "Point of sale"}
+        onScanMany={scanBatch}
       />
     </SidebarProvider>
   );
