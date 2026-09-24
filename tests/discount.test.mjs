@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {initial,mutate,productDiscount} from '../server/domain/store.mjs';
-const product=(price,extra={})=>({id:'',name:'Item',barcode:'123',category:'General',unit:'piece',price,cost:price,stock:10,min:1,...extra});
+const product=(price,extra={})=>({id:'',name:'Item',barcode:'123',category:'General',unit:'piece',price,cost:price,stock:10,min:1,discountMode:'auto',...extra});
+test('New products default to no discount and use MRP when selling price is blank',()=>{
+ const s=initial();
+ mutate(s,{type:'product',product:product('',{mrp:99,discountMode:undefined,cost:70})});
+ assert.equal(s.products[0].price,99);
+ assert.equal(s.products[0].discountMode,'none');
+ mutate(s,{type:'sale',id:'mrp-sale',items:[{id:s.products[0].id,qty:1}],discount:0,payment:'Cash'});
+ assert.equal(s.sales[0].total,99);
+});
 test('Automatic boundaries, custom override and explicit no discount',()=>{
  for(const [price,expected] of [[0,0],[39,0],[40,0],[49.99,0],[50,0],[50.01,3],[100,3],[100.01,10],[150,10]])assert.equal(productDiscount(product(price)),expected);
  assert.equal(productDiscount(product(30,{discountMode:'custom',customDiscount:2})),2);
@@ -20,4 +28,17 @@ test('Per-unit product discounts and extra bill discounts are counted once and p
  const before=JSON.stringify(s);
  assert.throws(()=>mutate(s,{type:'sale',id:'bad-sale',items:[{id,qty:1}],discount:171,payment:'Cash'}));
  assert.equal(JSON.stringify(s),before);
+});
+test('Checkout price edits apply only to this bill and cannot exceed MRP',()=>{
+ const s=initial();
+ mutate(s,{type:'product',product:product(120,{mrp:130,unit:'1 kg',subcategory:'Rice'})});
+ const id=s.products[0].id;
+ mutate(s,{type:'sale',id:'edited-price',items:[{id,qty:2,unitPrice:105}],discount:0,payment:'UPI'});
+ assert.equal(s.sales[0].total,210);
+ assert.equal(s.sales[0].items[0].unit,'1 kg');
+ assert.equal(s.sales[0].items[0].subcategory,'Rice');
+ assert.equal(s.products[0].price,120);
+ assert.equal(s.products[0].stock,8);
+ for (const unitPrice of [131,-1,105.001])
+  assert.throws(()=>mutate(s,{type:'sale',id:'bad-'+unitPrice,items:[{id,qty:1,unitPrice}],discount:0,payment:'Cash'}));
 });
