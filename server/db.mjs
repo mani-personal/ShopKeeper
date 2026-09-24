@@ -105,8 +105,9 @@ export async function migrate(db) {
       7: "notifications_wholesale_subscriptions",
       8: "marketplace_growth",
       9: "order_payments_employees",
+      10: "employee_permissions_gst",
     };
-    for (const version of [3, 4, 5, 6, 7, 8, 9])
+    for (const version of [3, 4, 5, 6, 7, 8, 9, 10])
       if (
         !(
           await db.query(
@@ -117,7 +118,7 @@ export async function migrate(db) {
       ) {
         for (const sql of readFileSync(
           new URL(
-            `../migrations/00${version}_${migrations[version]}.sql`,
+            `../migrations/${String(version).padStart(3, "0")}_${migrations[version]}.sql`,
             import.meta.url,
           ),
           "utf8",
