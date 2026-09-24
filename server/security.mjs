@@ -60,6 +60,43 @@ export const ADMIN_PERMISSIONS = [
   "reports",
   "wholesale",
 ];
+export const EMPLOYEE_PERMISSIONS = [
+  "dashboard",
+  "sales",
+  "inventory",
+  "purchases",
+  "customers",
+  "returns",
+  "payments",
+  "reports",
+  "settings",
+  "employees",
+];
+export function employeePermissions(user) {
+  if (user?.role !== "vendor" && user?.role !== "wholesale") return [];
+  if (user.employee_permissions == null) return EMPLOYEE_PERMISSIONS;
+  try {
+    const value =
+      typeof user.employee_permissions === "string"
+        ? JSON.parse(user.employee_permissions)
+        : user.employee_permissions;
+    return Array.isArray(value)
+      ? value.filter((x) => EMPLOYEE_PERMISSIONS.includes(x))
+      : [];
+  } catch {
+    return [];
+  }
+}
+export function requireEmployeePermission(user, permission) {
+  if (
+    (user?.role === "vendor" || user?.role === "wholesale") &&
+    !employeePermissions(user).includes(permission)
+  )
+    throw Object.assign(
+      Error("Your employee account does not have access to this section."),
+      { status: 403 },
+    );
+}
 export function permissions(user) {
   if (user?.role === "owner") return ADMIN_PERMISSIONS;
   if (user?.role !== "admin") return [];
@@ -98,7 +135,7 @@ export async function readSession(db, req) {
   return (
     (await db
       .prepare(
-        "SELECT users.id,users.email,users.role,users.name,users.admin_permissions,sessions.csrf,sessions.hash FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>? AND users.disabled=FALSE",
+        "SELECT users.id,users.email,users.role,users.name,users.admin_permissions,users.employee_permissions,sessions.csrf,sessions.hash FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>? AND users.disabled=FALSE",
       )
       .get(digest(raw), Date.now())) ?? null
   );
