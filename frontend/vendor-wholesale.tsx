@@ -958,7 +958,8 @@ function ReturnManager({
   const line = lines.find((x) => x.requestId + "|" + x.product_id === lineKey);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const f = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const f = new FormData(form);
     if (!line) return;
     try {
       await api("/api/wholesale/returns", {
@@ -971,7 +972,7 @@ function ReturnManager({
       });
       setMessage("Return submitted for approval.");
       setLineKey("");
-      e.currentTarget.reset();
+      form.reset();
       await reload();
     } catch (error) {
       setMessage((error as Error).message);
