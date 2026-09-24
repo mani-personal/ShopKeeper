@@ -1907,6 +1907,9 @@ html.dark {
   background: var(--card);
   color: var(--foreground);
 }
+.mobile-scan-dialog .multi-scan-commit { position: sticky; bottom: 0; z-index: 2; width: 100%; min-height: 48px; box-shadow: 0 4px 18px #0002; }
+.mobile-scan-dialog.multi-mode .camera-video { max-height: 32dvh; }
+.multi-scanned-row > span b { display: block; overflow-wrap: anywhere; }
 .multi-scanned-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px 28px 38px;
