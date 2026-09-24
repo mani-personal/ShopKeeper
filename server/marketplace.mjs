@@ -285,6 +285,7 @@ export function registerMarketplaceRoutes(app, db) {
       unit = clean(p.unit, 50),
       sku = typeof p.sku === "string" ? p.sku.trim().slice(0, 100) : "",
       category = clean(p.category, 80) || "General",
+      subcategory = typeof p.subcategory === "string" ? p.subcategory.trim() : "",
       description =
         typeof p.description === "string"
           ? p.description.trim().slice(0, 500)
@@ -293,6 +294,7 @@ export function registerMarketplaceRoutes(app, db) {
       gstRate = Number(p.gstRate ?? 0);
     if (
       !name ||
+      subcategory.length > 100 ||
       !unit ||
       !amount(p.price) ||
       Number(p.price) <= 0 ||
@@ -312,9 +314,11 @@ export function registerMarketplaceRoutes(app, db) {
       ![0, 5, 12, 18, 28].includes(gstRate)
     )
       throw bad("Check product, MRP, MOQ, bulk price and stock.");
+    if (sku && await db.prepare("SELECT id FROM wholesale_products WHERE wholesaler_id=? AND sku=? AND id<>?").get(req.wholesalerId, sku, id))
+      throw bad("This barcode already belongs to another wholesale pack size. Use a unique item code for each product.");
     await db
       .prepare(
-        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,bulk_price=EXCLUDED.bulk_price,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
+        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate,subcategory) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,bulk_price=EXCLUDED.bulk_price,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate,subcategory=EXCLUDED.subcategory WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
       )
       .run(
         id,
@@ -335,6 +339,7 @@ export function registerMarketplaceRoutes(app, db) {
         p.bulkPrice === "" || p.bulkPrice == null ? null : Number(p.bulkPrice),
         hsnCode,
         gstRate,
+        subcategory,
       );
     await recordActivity(db, {
       actorId: req.user.id,
