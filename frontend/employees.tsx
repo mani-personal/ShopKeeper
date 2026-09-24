@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Trash2, Users } from "lucide-react";
 import { api } from "./api";
 import { PasswordInput } from "./password-input";
+import { optionsFor, presetFor } from "./designations";
 
 const accessOptions = [
   ["dashboard", "Dashboard"],
@@ -25,6 +26,8 @@ export function Employees({
 }) {
   const [rows, setRows] = useState<any[]>([]),
     [accountType, setAccountType] = useState<"vendor" | "wholesale">("vendor"),
+    [designation, setDesignation] = useState("cashier"),
+    [access, setAccess] = useState<string[]>(["dashboard", "sales", "customers"]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const endpoint =
@@ -35,6 +38,10 @@ export function Employees({
       const result = await api(endpoint);
       setRows(result.employees);
       setAccountType(result.accountType || "vendor");
+      const type = result.accountType === "wholesale" ? "wholesale" : "vendor";
+      const first = optionsFor(type)[0][0];
+      setDesignation(first);
+      setAccess([...presetFor(type, first)]);
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -54,10 +61,12 @@ export function Employees({
         name: f.get("name"),
         email: f.get("email"),
         password: f.get("password"),
-        permissions: f.getAll("permissions"),
+        designation,
+        permissions: access,
       });
       setRows(result.employees);
       form.reset();
+      setAccess([...presetFor(accountType, designation)]);
       onMessage?.("Employee account added.");
       setError("");
     } catch (err) {
@@ -99,17 +108,25 @@ export function Employees({
             Use at least 12 characters. Share it privately and ask the employee
             to change it after sign-in.
           </small>
+          <label>Designation
+            <select value={designation} onChange={(e) => {
+              setDesignation(e.target.value);
+              setAccess([...presetFor(accountType, e.target.value)]);
+            }}>
+              {optionsFor(accountType).map(([name, option]) => <option key={name} value={name}>{option.label}</option>)}
+            </select>
+          </label>
           <fieldset className="permission-picker">
-            <legend>Allowed access</legend>
+            <legend>Allowed access (adjust as needed)</legend>
             {accessOptions
-              .filter(([value]) => accountType !== "wholesale" || value !== "sales")
+              .filter(([value]) => presetFor(accountType, designation).includes(value as never))
               .map(([value, label]) => (
               <label key={value}>
                 <input
                   type="checkbox"
-                  name="permissions"
                   value={value}
-                  defaultChecked={["dashboard", "sales", "inventory"].includes(value)}
+                  checked={access.includes(value)}
+                  onChange={(e) => setAccess(e.target.checked ? [...access, value] : access.filter((x) => x !== value))}
                 />
                 <span>{label}</span>
               </label>
@@ -137,6 +154,7 @@ export function Employees({
               <div>
                 <b>{row.name}</b>
                 <small>{row.email}</small>
+                <small>Designation: {optionsFor(accountType).find(([name]) => name === row.employee_designation)?.[1].label || "Custom (existing)"}</small>
                 <small>
                   {(row.permissions || [])
                     .map((value: string) =>
@@ -209,14 +227,24 @@ function EmployeeAccessEditor({
 }) {
   const [open, setOpen] = useState(false),
     [selected, setSelected] = useState<string[]>(row.permissions || []),
+    [designation, setDesignation] = useState(row.employee_designation || "custom"),
     [saving, setSaving] = useState(false);
   return (
     <details className="employee-access-editor" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="text-button">Edit access</summary>
       <div className="employee-access-popover">
         <b>Access for {row.name}</b>
+        <label>Designation
+          <select value={designation} onChange={(e) => {
+            setDesignation(e.target.value);
+            setSelected([...presetFor(accountType, e.target.value)]);
+          }}>
+            {designation === "custom" && <option value="custom">Custom (existing)</option>}
+            {optionsFor(accountType).map(([name, option]) => <option key={name} value={name}>{option.label}</option>)}
+          </select>
+        </label>
         {accessOptions
-          .filter(([value]) => accountType !== "wholesale" || value !== "sales")
+          .filter(([value]) => presetFor(accountType, designation).includes(value as never))
           .map(([value, label]) => (
           <label key={value}>
             <input
@@ -242,6 +270,7 @@ function EmployeeAccessEditor({
             try {
               const result = await api("/api/employees/" + row.id + "/permissions", {
                 vendorId,
+                designation,
                 permissions: selected,
               });
               saved(result.employees);
