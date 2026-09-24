@@ -14,6 +14,8 @@ import {
   ScanBarcode,
   Plus,
   ChevronRight,
+  Settings,
+  CircleHelp,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { api, logout } from "./api";
@@ -29,6 +31,7 @@ import { parseProductCode } from "@/lib/product-label";
 import { orderFinancials } from "@/lib/wholesale-invoice";
 import { WholesaleInvoiceButton } from "./wholesale-invoice-dialog";
 import { Employees } from "./employees";
+import { ProfileMenu } from "./profile-menu";
 import { businessTypes } from "@/lib/vendors";
 
 const statusTone = (status: string) =>
@@ -227,10 +230,6 @@ export function WholesalePortal() {
           ))}
         </nav>
         <div className="wholesale-header-actions">
-          <details className="profile-menu"><summary><Users size={17} /> Profile</summary>
-            {(["Subscription", "Settings", "Employees", "Support"] as const).filter((name) => !tabAccess[name] || data.permissions?.includes(tabAccess[name])).map((name) =>
-              <button type="button" key={name} onClick={() => setTab(name)}>{name}</button>)}
-          </details>
           <ThemeToggle />
           <Notifications
             onNavigate={(page) =>
@@ -241,18 +240,20 @@ export function WholesalePortal() {
             className="btn icon-only"
             aria-label="Refresh wholesale data"
             title="Refresh"
-            onClick={() => void load()}
+            onClick={() => window.location.reload()}
           >
             <RefreshCw size={17} />
           </button>
-          <button
-            className="btn wholesale-signout"
-            aria-label="Sign out"
-            onClick={logout}
-          >
-            <LogOut size={16} />
-            <span>Sign out</span>
-          </button>
+          <ProfileMenu name={data.profile.name || data.profile.business_name}
+            detail={data.profile.email || data.profile.business_name} logo={data.profile.logo_image}
+            links={([
+              {label: "My profile & settings", page: "Settings", icon: Settings},
+              {label: "Payment history", page: "Transactions", icon: IndianRupee},
+              {label: "Subscription", page: "Subscription", icon: ShoppingCart},
+              {label: "Employees", page: "Employees", icon: Users},
+              {label: "Help & support", page: "Support", icon: CircleHelp},
+            ]).filter((item) => !tabAccess[item.page] || data.permissions?.includes(tabAccess[item.page]))}
+            onNavigate={setTab} onLogout={logout} />
         </div>
       </header>
       <div className="page">
