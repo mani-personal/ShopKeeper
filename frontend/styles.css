@@ -7254,3 +7254,16 @@ body.printing-invoice .invoice-sheet td {
     overflow: auto;
   }
 }
+.profile-menu { position: relative; margin: 8px 10px; color: inherit; }
+.profile-menu summary { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 12px; cursor: pointer; border-radius: 9px; list-style: none; font-weight: 650; }
+.profile-menu summary::-webkit-details-marker { display: none; }
+.profile-menu summary:hover, .profile-menu[open] summary { background: var(--sidebar-accent, #e9f6f1); color: var(--sidebar-accent-foreground, #087e67); }
+.profile-menu button { display: block; width: 100%; padding: 10px 14px 10px 38px; text-align: left; background: transparent; border: 0; border-radius: 8px; cursor: pointer; color: inherit; }
+.profile-menu button:hover, .profile-menu button.active { background: var(--sidebar-accent, #e9f6f1); color: var(--sidebar-accent-foreground, #087e67); }
+.wholesale-header .profile-menu { margin: 0; z-index: 20; }
+.wholesale-header .profile-menu[open] { background: var(--sidebar, #fff); border-radius: 9px; }
+.wholesale-header .profile-menu button { white-space: nowrap; padding: 9px 16px; }
+.dashboard-help { margin-block: 20px; }
+.sale-line-field { display: inline-flex; flex-direction: column; gap: 4px; max-width: 160px; margin: 8px 8px 0 0; font-size: 12px; }
+.sale-line-field input { min-width: 0; width: 100%; padding: 7px 9px; border: 1px solid var(--sidebar-border, #ddd); border-radius: 7px; background: var(--background, #fff); color: inherit; }
+@media(max-width: 640px) { .sale-line-field { max-width: 125px; } .wholesale-header .profile-menu { width: auto; } }
