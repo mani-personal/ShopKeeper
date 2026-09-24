@@ -539,6 +539,13 @@ export function createApp(
           await db
             .prepare("DELETE FROM tokens WHERE vendor_id=? AND email=?")
             .run(selected, mail);
+        } else if (a.type === "vendor_category") {
+          if (isAdmin(user)) requirePermission(user, "stores");
+          else requireEmployeePermission(user, "settings");
+          if (!businessTypes.includes(a.businessType))
+            throw bad("Choose a valid store category.");
+          await db.prepare("UPDATE vendors SET business_type=?,version=version+1 WHERE id=?")
+            .run(a.businessType, selected);
         } else {
           const safe = [
             "product",
