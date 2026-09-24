@@ -12,6 +12,8 @@ import { orderFinancials } from "@/lib/wholesale-invoice";
 export function WholesaleInvoiceButton({
   order,
   sellerName,
+  sellerGst,
+  sellerAddress,
   buyerName,
   transactions,
   returns,
@@ -19,6 +21,8 @@ export function WholesaleInvoiceButton({
 }: {
   order: any;
   sellerName: string;
+  sellerGst?: string;
+  sellerAddress?: string;
   buyerName: string;
   transactions: any[];
   returns: any[];
@@ -27,7 +31,12 @@ export function WholesaleInvoiceButton({
   const [open, setOpen] = useState(false),
     finance = orderFinancials(order, transactions, returns, refunds),
     payments = transactions.filter((x: any) => x.request_id === order.id),
-    invoice = "INV-" + order.id.slice(0, 8).toUpperCase();
+    invoice = "INV-" + order.id.slice(0, 8).toUpperCase(),
+    gstTotal = order.items.reduce((sum: number, item: any) => {
+      const gross = Number(item.unit_price) * Number(item.quantity),
+        rate = Number(item.gst_rate || 0);
+      return sum + (rate ? gross - gross / (1 + rate / 100) : 0);
+    }, 0);
   function print() {
     document.body.classList.add("printing-invoice");
     window.print();
@@ -62,6 +71,7 @@ export function WholesaleInvoiceButton({
               <div>
                 <span className="eyebrow">WHOLESALE INVOICE</span>
                 <h2>{sellerName}</h2>
+                {sellerGst && <small>GSTIN: {sellerGst}</small>}
               </div>
               <div>
                 <b>{invoice}</b>
@@ -76,6 +86,8 @@ export function WholesaleInvoiceButton({
               <div>
                 <small>SUPPLIER</small>
                 <b>{sellerName}</b>
+                {sellerGst && <span>GSTIN: {sellerGst}</span>}
+                {sellerAddress && <span>{sellerAddress}</span>}
               </div>
               <div>
                 <small>VENDOR</small>
@@ -88,8 +100,10 @@ export function WholesaleInvoiceButton({
                   <tr>
                     <th>#</th>
                     <th>Product</th>
+                    <th>HSN</th>
                     <th>Quantity</th>
                     <th>Unit price</th>
+                    <th>GST</th>
                     <th>Amount</th>
                   </tr>
                 </thead>
@@ -98,10 +112,12 @@ export function WholesaleInvoiceButton({
                     <tr key={item.product_id}>
                       <td>{index + 1}</td>
                       <td>{item.name}</td>
+                      <td>{item.hsn_code || "—"}</td>
                       <td>
                         {item.quantity} {item.unit}
                       </td>
                       <td>{money(Number(item.unit_price))}</td>
+                      <td>{Number(item.gst_rate || 0)}%</td>
                       <td>
                         {money(Number(item.unit_price) * Number(item.quantity))}
                       </td>
@@ -114,6 +130,10 @@ export function WholesaleInvoiceButton({
               <div>
                 <span>Products</span>
                 <b>{money(finance.total)}</b>
+              </div>
+              <div>
+                <span>GST included</span>
+                <b>{money(gstTotal)}</b>
               </div>
               <div>
                 <span>Return credit</span>
@@ -165,6 +185,7 @@ export function WholesaleInvoiceButton({
               </table>
             </div>
             <footer>
+              Product prices are GST-inclusive where a GST rate is shown.
               Generated from ShopKeeper order and payment records.
             </footer>
           </article>
