@@ -147,9 +147,7 @@ const nav = [
   ["Dashboard", LayoutDashboard],
   ["Point of sale", ScanBarcode],
   ["Inventory", Package],
-  ["Sales", Receipt],
   ["Purchases", ShoppingBag],
-  ["Customers", Users],
   ["Supply hub", Truck],
   ["Reports", ChartNoAxesCombined],
   ["Expenses", Wallet],
@@ -203,6 +201,7 @@ const blank: Product = {
   barcode: "",
   category: "Staples",
   price: NaN,
+  discountMode: "none",
   cost: NaN,
   stock: NaN,
   min: 10,
@@ -269,10 +268,12 @@ export default function Home() {
     [barcode, setBarcode] = useState(""),
     [discount, setDiscount] = useState(0),
     [payment, setPayment] = useState("Cash"),
-    [customer, setCustomer] = useState("Walk-in customer"),
     [receipt, setReceipt] = useState<Sale | null>(null),
     [period, setPeriod] = useState("Last 7 days"),
-    [camera, setCamera] = useState(false);
+    [camera, setCamera] = useState(false),
+    [cameraPurpose, setCameraPurpose] = useState<"sale" | "inventory" | "product">("sale"),
+    [batchNotice, setBatchNotice] = useState(""),
+    [historyExpanded, setHistoryExpanded] = useState(false);
   const [version, setVersion] = useState(0),
     [codeKind, setCodeKind] = useState("activate");
   const [role, setRole] = useState(""),
@@ -288,11 +289,14 @@ export default function Home() {
   const requestVersion = useRef(0);
   const video = useRef<HTMLVideoElement>(null),
     scan = useRef<HTMLInputElement>(null),
-    saleId = useRef("");
+    saleId = useRef(""),
+    billRef = useRef<HTMLElement>(null),
+    historyRef = useRef<HTMLElement>(null);
   const [view, setView] = usePageRoute();
   const [logo, setLogo] = useState<string | null>(null);
   const isAdmin = role === "owner" || role === "admin";
   const allowedPage = (name: string) => {
+    if (role === "vendor" && name === "Dashboard" && permissions.includes("sales")) return true;
     if (role === "vendor" && name === "Supply hub")
       return ["purchases", "payments", "returns", "inventory"].some((permission) =>
         permissions.includes(permission),
@@ -352,6 +356,13 @@ export default function Home() {
   useEffect(() => {
     refresh();
   }, []);
+  useEffect(() => {
+    if (view === "Sales") {
+      setHistoryExpanded(true);
+      setView("Dashboard");
+      window.setTimeout(() => historyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+    } else if (view === "Customers") setView("Dashboard");
+  }, [view]);
   useEffect(() => {
     const back = () => {
       const target = new URLSearchParams(location.search).get("store") || "";
@@ -436,7 +447,6 @@ export default function Home() {
     setAccessCode("");
     setReceipt(null);
     setDiscount(0);
-    setCustomer("Walk-in customer");
     setPayment("Cash");
     setBarcode("");
     saleId.current = "";
@@ -486,12 +496,12 @@ export default function Home() {
           ...blank,
           barcode: draft.barcode ?? "",
           name: draft.name ?? "",
-          ...(draft.mrp !== undefined ? { mrp: draft.mrp } : {}),
+          ...(draft.mrp !== undefined ? { mrp: draft.mrp, price: draft.mrp } : {}),
         });
         setModal("product");
         toast(
           draft.mrp !== undefined
-            ? "MRP read from QR. Review MRP, enter selling price and cost, then save."
+            ? "MRP read from QR and used as selling price. Review cost and stock, then save."
             : "New barcode — use Scan product name & MRP to photograph the label.",
         );
       }
@@ -500,10 +510,31 @@ export default function Home() {
       toast.error((e as Error).message);
     }
   }
+  function scanProductForm(raw: string) {
+    try {
+      const draft = parseProductCode(raw);
+      const existing = s.products.find((item) => item.barcode && item.barcode === draft.barcode);
+      if (existing) {
+        setProduct(existing);
+        toast("Product already exists. Edit its stock and details before saving.");
+      } else {
+        setProduct((current) => ({ ...current,
+          barcode: draft.barcode ?? current.barcode,
+          name: draft.name ?? current.name,
+          ...(draft.mrp !== undefined ? {mrp: draft.mrp, price: Number.isFinite(current.price) ? current.price : draft.mrp} : {}),
+        }));
+        toast.success("Barcode added to the product form. Review all fields before saving.");
+      }
+    } catch (error) { toast.error((error as Error).message); }
+  }
   function scanBatch(codes: string[]) {
     const result = prepareBarcodeBatch(codes, s.products, cart);
     setCart(result.cart);
     setView("Point of sale");
+    setBatchNotice(result.added
+      ? `${result.added} scanned items are in your bill. Check the total and tap Complete sale below.${result.missing.length ? " Not added: " + result.missing.join(", ") : ""}`
+      : `No items added. Save these products in Inventory first: ${result.missing.join(", ")}`);
+    if (result.added) window.setTimeout(() => billRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 160);
     toast[result.missing.length ? "warning" : "success"](
       `${result.added} items added. ${result.missing.length ? "Check unknown or unavailable codes: " + result.missing.join(", ") : "Ready to checkout."}`,
     );
@@ -592,9 +623,9 @@ export default function Home() {
     }))
     .sort((a, b) => b.sold - a.sold)
     .slice(0, 4);
-  function exportCSV() {
+  function exportCSV(kind: "inventory" | "sales" = "inventory") {
     const rows =
-      view === "Sales" || view === "Reports"
+      kind === "sales"
         ? [
             ["Invoice", "Date", "Customer", "Payment", "Total"],
             ...s.sales.map((x) => [
@@ -645,7 +676,7 @@ export default function Home() {
       (s.demo ? "demo-" : "") +
       s.settings.name.replace(/[^a-z0-9]/gi, "-") +
       "-" +
-      view.toLowerCase() +
+      (kind === "sales" ? "sales" : "inventory") +
       ".csv";
     a.click();
     URL.revokeObjectURL(url);
@@ -665,12 +696,13 @@ export default function Home() {
       items: cart,
       discount,
       payment,
-      customer,
+      customer: "Walk-in customer",
     });
     if (result) {
       setReceipt(result.sales.find((x) => x.id === saleId.current)!);
       setModal("receipt");
       setCart([]);
+      setBatchNotice("");
       setDiscount(0);
       saleId.current = "";
       toast.success("Sale saved. Inventory updated.");
@@ -839,7 +871,7 @@ export default function Home() {
           <p className="nav-label">WORKSPACE</p>
           <SidebarMenu>
             {nav
-              .slice(0, 7)
+              .slice(0, 5)
               .filter(
                 ([name]) =>
                   allowedPage(name),
@@ -864,7 +896,7 @@ export default function Home() {
           <p className="nav-label">BUSINESS</p>
           <SidebarMenu>
             {nav
-              .slice(7)
+              .slice(5)
               .filter(
                 ([name]) =>
                   !["Reports", "Settings", "Account", "Employees", "Support"].includes(name) &&
@@ -971,7 +1003,6 @@ export default function Home() {
               links={([
                 {label: "My profile", page: "Account", icon: Users},
                 {label: "Payment history & plans", page: "Pricing", icon: IndianRupee},
-                {label: "Sales history", page: "Sales", icon: Receipt},
                 {label: "Account settings", page: "Settings", icon: Settings},
                 {label: "Employees", page: "Employees", icon: Users},
                 {label: "Help & support", page: "Support", icon: CircleHelp},
@@ -995,13 +1026,13 @@ export default function Home() {
               </p>
             </div>
             <div className="actions">
-              {["Dashboard", "Inventory", "Sales"].includes(view) && (
-                <button className="btn" onClick={exportCSV}>
+              {["Dashboard", "Inventory"].includes(view) && (
+                <button className="btn" onClick={() => exportCSV()}>
                   <Download size={16} />
                   Export
                 </button>
               )}
-              {["Dashboard", "Inventory", "Sales", "Vendors"].includes(
+              {["Dashboard", "Inventory", "Vendors"].includes(
                 view,
               ) && (
                 <button
@@ -1333,8 +1364,9 @@ export default function Home() {
                 <section className="panel">
                   <div className="panel-heading">
                     <h2>Recent sales</h2>
-                    <button className="text-button" onClick={() => go("Sales")}>
-                      View all <ArrowRight size={15} />
+                    <button className="text-button" onClick={() => {setHistoryExpanded(true);
+                      window.setTimeout(() => historyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);}}>
+                      View all sales history <ArrowRight size={15} />
                     </button>
                   </div>
                   {s.sales.length ? (
@@ -1428,9 +1460,9 @@ export default function Home() {
                   <Camera size={16} />
                   Scan bill
                 </button>
-                <button className="btn" onClick={() => setCamera(true)}>
+                <button className="btn" onClick={() => {setCameraPurpose("inventory");setCamera(true)}}>
                   <Camera size={16} />
-                  Scan
+                  Scan product to add
                 </button>
               </div>
               <Choice
@@ -1507,7 +1539,7 @@ export default function Home() {
                       type="button"
                       aria-label="Scan multiple barcodes with camera"
                       title="Scan multiple barcodes"
-                      onClick={() => setCamera(true)}
+                      onClick={() => {setCameraPurpose("sale");setCamera(true)}}
                     >
                       <Camera size={19} />
                     </button>
@@ -1581,7 +1613,7 @@ export default function Home() {
                   </div>
                 )}
               </section>
-              <section className="panel bill">
+              <section className="panel bill" ref={billRef}>
                 <div className="panel-heading">
                   <h2>
                     Current bill{" "}
@@ -1589,23 +1621,12 @@ export default function Home() {
                       {cart.reduce((t, p) => t + p.qty, 0)}
                     </span>
                   </h2>
-                  <button className="text-button" onClick={() => setCart([])}>
+                  <button className="text-button" onClick={() => {setCart([]);setBatchNotice("")}}>
                     Clear
                   </button>
                 </div>
                 <div className="bill-body">
-                  <label>
-                    Customer
-                    <Choice
-                      value={customer}
-                      onChange={setCustomer}
-                      options={[
-                        "Walk-in customer",
-                        ...s.customers.map((x) => x.name),
-                      ]}
-                      label="Customer"
-                    />
-                  </label>
+                  {batchNotice && <p role="status" className="notice scan-batch-notice">{batchNotice}</p>}
                   <div className="cart-items">
                     {!cartItems.length && (
                       <div className="cart-empty">
@@ -1731,11 +1752,13 @@ export default function Home() {
               </section>
             </div>
           )}
-          {view === "Sales" && (
-            <section className="panel">
+          {view === "Dashboard" && historyExpanded && (
+            <section className="panel sales-history-panel" ref={historyRef} id="sales-history">
               <div className="panel-heading">
                 <h2>Sales history</h2>
-                <span className="muted">{s.sales.length} invoices</span>
+                <div className="actions"><span className="muted">{s.sales.length} invoices</span>
+                  <button className="btn" onClick={() => exportCSV("sales")}>Export sales</button>
+                  <button className="text-button" onClick={() => setHistoryExpanded(false)}>Hide history</button></div>
               </div>
               <Table>
                 <TableHeader>
@@ -1791,46 +1814,6 @@ export default function Home() {
               </Table>
               {!s.sales.length && (
                 <div className="empty-inline">No sales recorded yet.</div>
-              )}
-            </section>
-          )}
-          {view === "Customers" && (
-            <section className="panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Customers directory</h2>
-                  <p>Keep contact details close at hand.</p>
-                </div>
-                <button
-                  className="btn primary"
-                  onClick={() => setModal("contact")}
-                >
-                  <Plus size={16} />
-                  Add customer
-                </button>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {s.customers.map((x) => (
-                    <TableRow key={x.id}>
-                      <TableCell>
-                        <b>{x.name}</b>
-                      </TableCell>
-                      <TableCell>{x.phone || "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {!s.customers.length && (
-                <div className="empty-inline">
-                  Your directory is empty. Add your first customer.
-                </div>
               )}
             </section>
           )}
@@ -2446,9 +2429,9 @@ export default function Home() {
         </div>
       </main>
       <Dialog
-        open={!!modal}
+        open={!!modal && !(camera && cameraPurpose === "product")}
         onOpenChange={(o) => {
-          if (!o && !busy) setModal("");
+          if (!o && !busy && !(camera && cameraPurpose === "product")) setModal("");
         }}
       >
         <DialogContent className="app-dialog">
@@ -2460,7 +2443,7 @@ export default function Home() {
                   ? "Edit product"
                   : "Add product"
                 : modal === "contact"
-                  ? "Add " + (view === "Customers" ? "customer" : "supplier")
+                  ? "Add supplier"
                   : modal === "purchase"
                     ? "Receive stock"
                     : modal === "receipt"
@@ -2481,7 +2464,6 @@ export default function Home() {
                 if (await act(a)) {
                   setModal("");
                   go("Dashboard");
-                  setCustomer("Walk-in customer");
                   setCart([]);
                   setDiscount(0);
                   saleId.current = "";
@@ -2497,7 +2479,8 @@ export default function Home() {
               className="form"
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (await act({ type: "product", product })) {
+                const completed = {...product, price: Number.isFinite(product.price) ? product.price : product.mrp};
+                if (await act({ type: "product", product: completed })) {
                   setModal("");
                   toast.success("Product saved");
                 }
@@ -2511,9 +2494,13 @@ export default function Home() {
                     ...(draft.barcode ? { barcode: draft.barcode } : {}),
                     ...(draft.mrp !== undefined ? { mrp: draft.mrp } : {}),
                     ...(draft.name ? { name: draft.name } : {}),
+                    ...(draft.mrp !== undefined && !Number.isFinite(p.price) ? {price: draft.mrp} : {}),
                   }))
                 }
               />
+              <button type="button" className="btn" onClick={() => {setCameraPurpose("product");setCamera(true)}}>
+                <Camera size={16} /> Scan barcode with camera
+              </button>
               <button
                 type="button"
                 className="btn"
@@ -2533,15 +2520,10 @@ export default function Home() {
                   min={Number.isFinite(product.price) ? product.price : 0}
                   step=".01"
                   value={product.mrp ?? ""}
-                  onChange={(e) =>
-                    setProduct({
-                      ...product,
-                      mrp:
-                        e.target.value === ""
-                          ? undefined
-                          : Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => setProduct((current) => {
+                    const mrp = e.target.value === "" ? undefined : Number(e.target.value);
+                    return {...current,mrp,...(mrp !== undefined && !Number.isFinite(current.price) ? {price:mrp} : {})};
+                  })}
                 />
               </label>
               <p className="muted small">Each weight or package size needs its own product. If two sizes share a printed barcode, give one a separate internal item code so the scanner cannot select the wrong price.</p>
@@ -2586,10 +2568,11 @@ export default function Home() {
                     }[k]
                   }
                   <input
-                    required={k !== "barcode"}
+                    required={k !== "barcode" && !(k === "price" && product.mrp !== undefined)}
                     placeholder={
                       k === "barcode"
                         ? "Optional — leave empty for items without barcode"
+                        : k === "price" ? "Leave empty to use MRP"
                         : undefined
                     }
                     type={
@@ -2622,8 +2605,8 @@ export default function Home() {
                 Product discount
                 <Choice
                   label="Product discount mode"
-                  value={product.discountMode ?? "auto"}
-                  options={["auto", "custom", "none"]}
+                  value={product.discountMode ?? "none"}
+                  options={["none", "auto", "custom"]}
                   onChange={(value) =>
                     setProduct({
                       ...product,
@@ -2710,7 +2693,7 @@ export default function Home() {
                 if (
                   await act({
                     type: "contact",
-                    kind: view === "Customers" ? "customers" : "suppliers",
+                    kind: "suppliers",
                     ...f,
                   })
                 ) {
@@ -2789,9 +2772,16 @@ export default function Home() {
       <MobileScanner
         open={camera}
         onClose={() => setCamera(false)}
-        onScan={scanCode}
-        multi={view === "Point of sale"}
+        onScan={cameraPurpose === "product" ? scanProductForm : scanCode}
+        multi={cameraPurpose === "sale"}
         onScanMany={scanBatch}
+        batchActionLabel="Review bill and complete sale"
+        describeCode={(raw) => {
+          try { const code = parseProductCode(raw).barcode;
+            const item = s.products.find((product) => product.barcode && product.barcode === code);
+            return item ? `${item.name} · ${item.unit}` : "Product not saved";
+          } catch { return "Invalid code"; }
+        }}
       />
     </SidebarProvider>
   );
