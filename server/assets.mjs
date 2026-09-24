@@ -1,27 +1,188 @@
-import sharp from 'sharp';
-import {transaction} from './db.mjs';
-import {requireVendor,limit,isAdmin,requirePermission} from './security.mjs';
-import {recordActivity} from './activities.mjs';
-const bad=message=>Object.assign(Error(message),{status:400});
-async function raster(value,logo){
- if(typeof value!=='string'||value.length>2400000||!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value))throw bad('Upload a JPG, PNG or WebP image under 1.8 MB.');
- try{const source=Buffer.from(value.split(',')[1],'base64');if(source.length>1800000)throw Error();const image=sharp(source,{limitInputPixels:24000000,animated:false});const meta=await image.metadata();if(!['jpeg','png','webp'].includes(meta.format)||!meta.width||!meta.height)throw Error();const result=await image.rotate().resize({width:logo?320:1600,height:logo?320:2000,fit:'inside',withoutEnlargement:true}).webp({quality:logo?88:85}).toBuffer();if(result.length>(logo?150000:1500000))throw Error();return result;}catch{throw bad('Image is invalid or too large. Choose a smaller, clear photo.');}
+import sharp from "sharp";
+import { transaction } from "./db.mjs";
+import {
+  requireVendor,
+  limit,
+  isAdmin,
+  requirePermission,
+  wholesalePrincipal,
+} from "./security.mjs";
+import { recordActivity } from "./activities.mjs";
+const bad = (message) => Object.assign(Error(message), { status: 400 });
+async function raster(value, logo) {
+  if (
+    typeof value !== "string" ||
+    value.length > 2400000 ||
+    !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value)
+  )
+    throw bad("Upload a JPG, PNG or WebP image under 1.8 MB.");
+  try {
+    const source = Buffer.from(value.split(",")[1], "base64");
+    if (source.length > 1800000) throw Error();
+    const image = sharp(source, {
+      limitInputPixels: 24000000,
+      animated: false,
+    });
+    const meta = await image.metadata();
+    if (
+      !["jpeg", "png", "webp"].includes(meta.format) ||
+      !meta.width ||
+      !meta.height
+    )
+      throw Error();
+    const result = await image
+      .rotate()
+      .resize({
+        width: logo ? 320 : 1600,
+        height: logo ? 320 : 2000,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: logo ? 88 : 85 })
+      .toBuffer();
+    if (result.length > (logo ? 150000 : 1500000)) throw Error();
+    return result;
+  } catch {
+    throw bad("Image is invalid or too large. Choose a smaller, clear photo.");
+  }
 }
-export function registerAssetRoutes(app,db){
- app.post('/api/vendors/:id/logo',async(req,res)=>{
-  if(isAdmin(req.user))requirePermission(req.user,'stores');
-  await requireVendor(db,req.user,req.params.id);await limit(db,'logo:'+req.user.id,30);const bytes=req.body.remove===true?null:await raster(req.body.image,true);const logo=bytes?'data:image/webp;base64,'+bytes.toString('base64'):null;
-  await transaction(db,async()=>{await requireVendor(db,req.user,req.params.id);await db.prepare('UPDATE vendors SET logo_image=? WHERE id=?').run(logo,req.params.id);await db.prepare('INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)').run(Date.now(),req.user.id,req.params.id,'logo_update');});res.json({logo});
- });
- app.post('/api/vendors/:id/payment-proof/:payment',async(req,res)=>{
-  if(isAdmin(req.user))requirePermission(req.user,'subscriptions');
-  await requireVendor(db,req.user,req.params.id);await limit(db,'proof:'+req.user.id,30);const bytes=await raster(req.body.image,false);
-  await transaction(db,async()=>{await requireVendor(db,req.user,req.params.id);const order=await db.prepare('SELECT status FROM subscription_history WHERE id=? AND vendor_id=? FOR UPDATE').get(req.params.payment,req.params.id);if(!order||order.status!=='pending')throw bad('Only a pending payment can receive a screenshot.');
-   await db.prepare('INSERT INTO payment_proofs(payment_id,image,mime,uploaded_at,uploaded_by) VALUES(?,?,?,?,?) ON CONFLICT(payment_id) DO UPDATE SET image=EXCLUDED.image,mime=EXCLUDED.mime,uploaded_at=EXCLUDED.uploaded_at,uploaded_by=EXCLUDED.uploaded_by').run(req.params.payment,bytes,'image/webp',Date.now(),req.user.id);await db.prepare('INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)').run(Date.now(),req.user.id,req.params.id,'payment_proof_upload:'+req.params.payment);
-  });res.json({ok:true});
- });
- app.get('/api/vendors/:id/payment-proof/:payment',async(req,res)=>{if(isAdmin(req.user))requirePermission(req.user,'subscriptions');await requireVendor(db,req.user,req.params.id);const proof=await db.prepare('SELECT p.image,p.mime FROM payment_proofs p JOIN subscription_history h ON h.id=p.payment_id WHERE p.payment_id=? AND h.vendor_id=?').get(req.params.payment,req.params.id);if(!proof)return res.status(404).json({error:'Screenshot not found.'});res.set('Content-Type',proof.mime);res.set('Content-Security-Policy',"default-src 'none'; sandbox");res.send(Buffer.from(proof.image));});
- app.post('/api/wholesale/logo',async(req,res)=>{if(req.user.role!=='wholesale')throw Object.assign(Error('Wholesale seller access required.'),{status:403});await limit(db,'wholesale-logo:'+req.user.id,30);const bytes=req.body.remove===true?null:await raster(req.body.image,true),logo=bytes?'data:image/webp;base64,'+bytes.toString('base64'):null;await db.prepare('UPDATE wholesalers SET logo_image=? WHERE user_id=?').run(logo,req.user.id);await recordActivity(db,{actorId:req.user.id,wholesalerId:req.user.id,scope:'wholesale',category:'profile',title:'Wholesale logo updated'});res.json({logo});});
- app.post('/api/wholesale/payment-proof/:payment',async(req,res)=>{if(req.user.role!=='wholesale')throw Object.assign(Error('Wholesale seller access required.'),{status:403});await limit(db,'wholesale-proof:'+req.user.id,30);const bytes=await raster(req.body.image,false);const order=await db.prepare("SELECT * FROM wholesale_subscription_history WHERE id=? AND wholesaler_id=? AND status='pending'").get(req.params.payment,req.user.id);if(!order)throw bad('Only a pending payment can receive a screenshot.');await db.prepare('INSERT INTO wholesale_payment_proofs(payment_id,image,mime,uploaded_at,uploaded_by) VALUES(?,?,?,?,?) ON CONFLICT(payment_id) DO UPDATE SET image=EXCLUDED.image,mime=EXCLUDED.mime,uploaded_at=EXCLUDED.uploaded_at,uploaded_by=EXCLUDED.uploaded_by').run(order.id,bytes,'image/webp',Date.now(),req.user.id);res.json({ok:true});});
- app.get('/api/wholesale/payment-proof/:payment',async(req,res)=>{const order=await db.prepare('SELECT wholesaler_id FROM wholesale_subscription_history WHERE id=?').get(req.params.payment);if(!order||(req.user.role==='wholesale'&&order.wholesaler_id!==req.user.id))return res.status(404).json({error:'Screenshot not found.'});if(isAdmin(req.user))requirePermission(req.user,'subscriptions');const proof=await db.prepare('SELECT image,mime FROM wholesale_payment_proofs WHERE payment_id=?').get(req.params.payment);if(!proof)return res.status(404).json({error:'Screenshot not found.'});res.set('Content-Type',proof.mime);res.set('Content-Security-Policy',"default-src 'none'; sandbox");res.send(Buffer.from(proof.image));});
+export function registerAssetRoutes(app, db) {
+  app.post("/api/vendors/:id/logo", async (req, res) => {
+    if (isAdmin(req.user)) requirePermission(req.user, "stores");
+    await requireVendor(db, req.user, req.params.id);
+    await limit(db, "logo:" + req.user.id, 30);
+    const bytes =
+      req.body.remove === true ? null : await raster(req.body.image, true);
+    const logo = bytes
+      ? "data:image/webp;base64," + bytes.toString("base64")
+      : null;
+    await transaction(db, async () => {
+      await requireVendor(db, req.user, req.params.id);
+      await db
+        .prepare("UPDATE vendors SET logo_image=? WHERE id=?")
+        .run(logo, req.params.id);
+      await db
+        .prepare(
+          "INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)",
+        )
+        .run(Date.now(), req.user.id, req.params.id, "logo_update");
+    });
+    res.json({ logo });
+  });
+  app.post("/api/vendors/:id/payment-proof/:payment", async (req, res) => {
+    if (isAdmin(req.user)) requirePermission(req.user, "subscriptions");
+    await requireVendor(db, req.user, req.params.id);
+    await limit(db, "proof:" + req.user.id, 30);
+    const bytes = await raster(req.body.image, false);
+    await transaction(db, async () => {
+      await requireVendor(db, req.user, req.params.id);
+      const order = await db
+        .prepare(
+          "SELECT status FROM subscription_history WHERE id=? AND vendor_id=? FOR UPDATE",
+        )
+        .get(req.params.payment, req.params.id);
+      if (!order || order.status !== "pending")
+        throw bad("Only a pending payment can receive a screenshot.");
+      await db
+        .prepare(
+          "INSERT INTO payment_proofs(payment_id,image,mime,uploaded_at,uploaded_by) VALUES(?,?,?,?,?) ON CONFLICT(payment_id) DO UPDATE SET image=EXCLUDED.image,mime=EXCLUDED.mime,uploaded_at=EXCLUDED.uploaded_at,uploaded_by=EXCLUDED.uploaded_by",
+        )
+        .run(req.params.payment, bytes, "image/webp", Date.now(), req.user.id);
+      await db
+        .prepare(
+          "INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)",
+        )
+        .run(
+          Date.now(),
+          req.user.id,
+          req.params.id,
+          "payment_proof_upload:" + req.params.payment,
+        );
+    });
+    res.json({ ok: true });
+  });
+  app.get("/api/vendors/:id/payment-proof/:payment", async (req, res) => {
+    if (isAdmin(req.user)) requirePermission(req.user, "subscriptions");
+    await requireVendor(db, req.user, req.params.id);
+    const proof = await db
+      .prepare(
+        "SELECT p.image,p.mime FROM payment_proofs p JOIN subscription_history h ON h.id=p.payment_id WHERE p.payment_id=? AND h.vendor_id=?",
+      )
+      .get(req.params.payment, req.params.id);
+    if (!proof) return res.status(404).json({ error: "Screenshot not found." });
+    res.set("Content-Type", proof.mime);
+    res.set("Content-Security-Policy", "default-src 'none'; sandbox");
+    res.send(Buffer.from(proof.image));
+  });
+  app.post("/api/wholesale/logo", async (req, res) => {
+    if (req.user.role !== "wholesale")
+      throw Object.assign(Error("Wholesale seller access required."), {
+        status: 403,
+      });
+    const wholesalerId = await wholesalePrincipal(db, req.user);
+    await limit(db, "wholesale-logo:" + req.user.id, 30);
+    const bytes =
+        req.body.remove === true ? null : await raster(req.body.image, true),
+      logo = bytes
+        ? "data:image/webp;base64," + bytes.toString("base64")
+        : null;
+    await db
+      .prepare("UPDATE wholesalers SET logo_image=? WHERE user_id=?")
+      .run(logo, wholesalerId);
+    await recordActivity(db, {
+      actorId: req.user.id,
+      wholesalerId,
+      scope: "wholesale",
+      category: "profile",
+      title: "Wholesale logo updated",
+    });
+    res.json({ logo });
+  });
+  app.post("/api/wholesale/payment-proof/:payment", async (req, res) => {
+    if (req.user.role !== "wholesale")
+      throw Object.assign(Error("Wholesale seller access required."), {
+        status: 403,
+      });
+    const wholesalerId = await wholesalePrincipal(db, req.user);
+    await limit(db, "wholesale-proof:" + req.user.id, 30);
+    const bytes = await raster(req.body.image, false);
+    const order = await db
+      .prepare(
+        "SELECT * FROM wholesale_subscription_history WHERE id=? AND wholesaler_id=? AND status='pending'",
+      )
+      .get(req.params.payment, wholesalerId);
+    if (!order) throw bad("Only a pending payment can receive a screenshot.");
+    await db
+      .prepare(
+        "INSERT INTO wholesale_payment_proofs(payment_id,image,mime,uploaded_at,uploaded_by) VALUES(?,?,?,?,?) ON CONFLICT(payment_id) DO UPDATE SET image=EXCLUDED.image,mime=EXCLUDED.mime,uploaded_at=EXCLUDED.uploaded_at,uploaded_by=EXCLUDED.uploaded_by",
+      )
+      .run(order.id, bytes, "image/webp", Date.now(), req.user.id);
+    res.json({ ok: true });
+  });
+  app.get("/api/wholesale/payment-proof/:payment", async (req, res) => {
+    const order = await db
+      .prepare(
+        "SELECT wholesaler_id FROM wholesale_subscription_history WHERE id=?",
+      )
+      .get(req.params.payment);
+    const wholesalerId =
+      req.user.role === "wholesale"
+        ? await wholesalePrincipal(db, req.user)
+        : null;
+    if (
+      !order ||
+      (req.user.role === "wholesale" && order.wholesaler_id !== wholesalerId)
+    )
+      return res.status(404).json({ error: "Screenshot not found." });
+    if (isAdmin(req.user)) requirePermission(req.user, "subscriptions");
+    const proof = await db
+      .prepare(
+        "SELECT image,mime FROM wholesale_payment_proofs WHERE payment_id=?",
+      )
+      .get(req.params.payment);
+    if (!proof) return res.status(404).json({ error: "Screenshot not found." });
+    res.set("Content-Type", proof.mime);
+    res.set("Content-Security-Policy", "default-src 'none'; sandbox");
+    res.send(Buffer.from(proof.image));
+  });
 }
