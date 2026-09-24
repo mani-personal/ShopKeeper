@@ -10,6 +10,7 @@ import {
 } from "./security.mjs";
 import { recordActivity } from "./activities.mjs";
 import { roundMoney } from "./domain/store.mjs";
+import { businessTypes } from "./domain/vendors.mjs";
 
 const bad = (message, status = 400) =>
   Object.assign(Error(message), { status });
@@ -64,9 +65,9 @@ async function orderRows(db, where, value) {
 async function marketplaceCatalog(db, vendorId) {
   const products = await db
     .prepare(
-      `SELECT p.*,w.business_name,w.logo_image,w.service_areas,w.brands,w.min_order,w.delivery_days,w.verified,w.visibility_mode,u.disabled,COALESCE(rv.rating,0) AS rating,COALESCE(rv.reviews,0) AS reviews,EXISTS(SELECT 1 FROM wholesale_vendor_favourites f WHERE f.vendor_id=? AND f.wholesaler_id=w.user_id) AS favourite FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id JOIN users u ON u.id=w.user_id LEFT JOIN (SELECT wholesaler_id,ROUND(AVG(rating),1) AS rating,COUNT(*) AS reviews FROM wholesale_reviews GROUP BY wholesaler_id) rv ON rv.wholesaler_id=w.user_id WHERE p.active=TRUE AND p.stock>0 AND u.disabled=FALSE AND (w.visibility_mode='public' OR EXISTS(SELECT 1 FROM wholesale_vendor_access a WHERE a.vendor_id=? AND a.wholesaler_id=w.user_id)) ORDER BY w.verified DESC,w.business_name,p.name`,
+      `SELECT p.*,w.business_name,w.business_category,w.logo_image,w.service_areas,w.brands,w.min_order,w.delivery_days,w.verified,w.visibility_mode,u.disabled,COALESCE(rv.rating,0) AS rating,COALESCE(rv.reviews,0) AS reviews,EXISTS(SELECT 1 FROM wholesale_vendor_favourites f WHERE f.vendor_id=? AND f.wholesaler_id=w.user_id) AS favourite FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id JOIN users u ON u.id=w.user_id JOIN vendors v ON v.id=? LEFT JOIN (SELECT wholesaler_id,ROUND(AVG(rating),1) AS rating,COUNT(*) AS reviews FROM wholesale_reviews GROUP BY wholesaler_id) rv ON rv.wholesaler_id=w.user_id WHERE p.active=TRUE AND p.stock>0 AND u.disabled=FALSE AND w.business_category=v.business_type AND (w.visibility_mode='public' OR EXISTS(SELECT 1 FROM wholesale_vendor_access a WHERE a.vendor_id=? AND a.wholesaler_id=w.user_id)) ORDER BY w.verified DESC,w.business_name,p.name`,
     )
-    .all(vendorId, vendorId);
+    .all(vendorId, vendorId, vendorId);
   return {
     products,
     requests: await orderRows(db, "r.vendor_id", vendorId),
@@ -212,9 +213,12 @@ export function registerMarketplaceRoutes(app, db) {
       gst = clean(req.body.gstNumber, 30),
       areas = clean(req.body.serviceAreas, 300),
       brands = clean(req.body.brands, 500),
-      mode = req.body.visibilityMode;
+      mode = req.body.visibilityMode,
+      businessCategory = clean(req.body.businessCategory, 80) ||
+        (await db.prepare("SELECT business_category FROM wholesalers WHERE user_id=?").get(req.wholesalerId))?.business_category;
     if (
       !business ||
+      !businessTypes.includes(businessCategory) ||
       !name ||
       !["selected", "public"].includes(mode) ||
       !amount(req.body.minOrder) ||
@@ -224,7 +228,7 @@ export function registerMarketplaceRoutes(app, db) {
     await transaction(db, async () => {
       await db
         .prepare(
-          "UPDATE wholesalers SET business_name=?,phone=?,address=?,gst_number=?,service_areas=?,brands=?,min_order=?,delivery_days=?,visibility_mode=? WHERE user_id=?",
+          "UPDATE wholesalers SET business_name=?,phone=?,address=?,gst_number=?,service_areas=?,brands=?,min_order=?,delivery_days=?,visibility_mode=?,business_category=? WHERE user_id=?",
         )
         .run(
           business,
@@ -236,6 +240,7 @@ export function registerMarketplaceRoutes(app, db) {
           Number(req.body.minOrder),
           Number(req.body.deliveryDays),
           mode,
+          businessCategory,
           req.wholesalerId,
         );
       await db
@@ -352,12 +357,14 @@ export function registerMarketplaceRoutes(app, db) {
     const ids = req.body.items.map((x) => x.productId),
       products = await db
         .prepare(
-          "SELECT p.*,w.min_order,w.visibility_mode,w.delivery_days FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id WHERE p.id=ANY(?) AND p.active=TRUE",
+          "SELECT p.*,w.min_order,w.visibility_mode,w.delivery_days,w.business_category FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id WHERE p.id=ANY(?) AND p.active=TRUE",
         )
         .all(ids);
     if (products.length !== new Set(ids).size)
       throw bad("One or more products are unavailable.");
     const wholesaler = products[0].wholesaler_id;
+    if (products[0].business_category !== vendor.business_type)
+      throw bad("This wholesaler serves a different store category.", 403);
     if (products.some((x) => x.wholesaler_id !== wholesaler))
       throw bad("Create a separate order for each wholesaler.");
     const allowed =
@@ -741,6 +748,10 @@ export function registerMarketplaceRoutes(app, db) {
         .get(req.params.id, vendor.id);
     if (!source || !["delivered", "completed"].includes(source.status))
       throw bad("Only delivered orders can be repeated.");
+    const category = await db.prepare("SELECT business_category FROM wholesalers WHERE user_id=?")
+      .get(source.wholesaler_id);
+    if (vendor.business_type !== category?.business_category)
+      throw bad("This wholesaler serves a different store category.", 403);
     const lines = await db
       .prepare(
         "SELECT i.*,p.price,p.stock,p.active,p.min_qty FROM wholesale_request_items i JOIN wholesale_products p ON p.id=i.product_id WHERE i.request_id=?",
