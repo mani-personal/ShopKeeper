@@ -29,6 +29,7 @@ import { parseProductCode } from "@/lib/product-label";
 import { orderFinancials } from "@/lib/wholesale-invoice";
 import { WholesaleInvoiceButton } from "./wholesale-invoice-dialog";
 import { Employees } from "./employees";
+import { businessTypes } from "@/lib/vendors";
 
 const statusTone = (status: string) =>
   ["completed", "paid", "processed", "received"].includes(status)
@@ -62,6 +63,7 @@ export function WholesalePortal() {
     [message, setMessage] = useState(""),
     [editing, setEditing] = useState<any>(),
     [scanner, setScanner] = useState(false),
+    [packingOrder, setPackingOrder] = useState<any>(),
     [scanCode, setScanCode] = useState("");
   async function load() {
     try {
@@ -136,6 +138,30 @@ export function WholesalePortal() {
     } catch (e) {
       setMessage((e as Error).message);
     }
+  }
+  async function verifyPacking(order: any, codes: string[]) {
+    const scanned = new Map<string, number>();
+    for (const raw of codes) {
+      try {
+        const barcode = parseProductCode(raw).barcode || raw.trim();
+        scanned.set(barcode, (scanned.get(barcode) || 0) + 1);
+      } catch { /* Bad labels stay unmatched. */ }
+    }
+    const missing = order.items.filter((item: any) => !item.sku ||
+      (scanned.get(item.sku) || 0) < Number(item.quantity));
+    if (missing.length) {
+      setMessage("Order #" + order.id.slice(0, 8).toUpperCase() +
+        " still needs " + missing.map((item: any) => item.name + " × " +
+          Math.max(0, Number(item.quantity) - (scanned.get(item.sku) || 0)) +
+          (item.sku ? "" : " (no barcode)" )).join(", ") +
+        ". Check quantities and use Items are packed for products without a barcode.");
+      return;
+    }
+    try {
+      await api("/api/marketplace/requests/" + order.id + "/status", { status: "packed" });
+      await load();
+      setMessage("All requested items scanned. Order marked packed.");
+    } catch (error) { setMessage((error as Error).message); }
   }
   if (!data)
     return (
@@ -288,6 +314,7 @@ export function WholesalePortal() {
             data={data}
             reload={load}
             setMessage={setMessage}
+            scanToPack={setPackingOrder}
           />
         )}{" "}
         {tab === "Products" && (
@@ -546,6 +573,15 @@ export function WholesalePortal() {
           open={scanner}
           onClose={() => setScanner(false)}
           onScan={useScannedCode}
+        />
+        <MobileScanner
+          open={Boolean(packingOrder)}
+          onClose={() => setPackingOrder(undefined)}
+          onScan={() => {}}
+          multi
+          onScanMany={(codes) => {
+            if (packingOrder) void verifyPacking(packingOrder, codes);
+          }}
         />
       </div>
     </main>
@@ -934,10 +970,12 @@ function MarketplaceRequests({
   data,
   reload,
   setMessage,
+  scanToPack,
 }: {
   data: any;
   reload: () => Promise<void>;
   setMessage: (x: string) => void;
+  scanToPack: (order: any) => void;
 }) {
   async function call(path: string, body: any, message: string) {
     try {
@@ -1048,6 +1086,11 @@ function MarketplaceRequests({
                     }
                   >
                     {action[r.status]}
+                  </button>
+                )}
+                {r.status === "approved" && r.items.some((item: any) => item.sku) && (
+                  <button className="btn" onClick={() => scanToPack(r)}>
+                    <ScanBarcode size={16} /> Scan items to pack
                   </button>
                 )}
                 {["delivered", "completed"].includes(r.status) && (
@@ -2018,6 +2061,13 @@ function WholesaleSettings({
             />
           </label>
           <label>
+            Business category
+            <select name="businessCategory" defaultValue={data.profile.business_category || "General store"}>
+              {businessTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+            <small>Only vendors in this category can find your products or appear in Vendors.</small>
+          </label>
+          <label>
             GST number
             <input name="gstNumber" defaultValue={data.profile.gst_number} />
           </label>
@@ -2216,6 +2266,9 @@ export function WholesalerManagement() {
       >
         <input name="name" placeholder="Contact name" required />
         <input name="businessName" placeholder="Wholesale business" required />
+        <select name="businessCategory" aria-label="Wholesale business category" defaultValue="General store">
+          {businessTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
         <input name="email" type="email" placeholder="Email" required />
         <PasswordInput
           name="password"
@@ -2233,7 +2286,7 @@ export function WholesalerManagement() {
           <div>
             <b>{r.business_name}</b>
             <small>
-              {r.name} · {r.email}
+              {r.name} · {r.email} · {r.business_category || "General store"}
             </small>
           </div>
           <span className={"badge " + (r.disabled ? "amber" : "green")}>
