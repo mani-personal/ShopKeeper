@@ -21,7 +21,7 @@ async function makeReader(){
   return new BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:150});
 }
 
-export function MobileScanner({open,onClose,onScan,multi=false,onScanMany}:{open:boolean;onClose:()=>void;onScan:(code:string)=>void;multi?:boolean;onScanMany?:(codes:string[])=>void}){
+export function MobileScanner({open,onClose,onScan,multi=false,onScanMany,describeCode,batchActionLabel='Add scanned items'}:{open:boolean;onClose:()=>void;onScan:(code:string)=>void;multi?:boolean;onScanMany?:(codes:string[])=>void;describeCode?:(code:string)=>string;batchActionLabel?:string}){
   const video=useRef<HTMLVideoElement>(null);
   const callbacks=useRef({onScan,onClose,onScanMany});callbacks.current={onScan,onClose,onScanMany};
   const generation=useRef(0),consumed=useRef(false);
@@ -174,28 +174,29 @@ export function MobileScanner({open,onClose,onScan,multi=false,onScanMany}:{open
     finally{URL.revokeObjectURL(url);if(session===generation.current)setStatus('Camera paused. Restart it to scan live.')}
   }
   return <Dialog open={open} onOpenChange={value=>{if(!value)callbacks.current.onClose()}}>
-    <DialogContent className="mobile-scan-dialog">
+    <DialogContent className={multi?'mobile-scan-dialog multi-mode':'mobile-scan-dialog'}>
       <DialogTitle>{multi?'Scan multiple product barcodes':'Scan a product barcode'}</DialogTitle>
       <DialogDescription>Start about 15–25 cm away. Keep the bars upright, avoid glare and hold steady. Move back if the label looks blurry.</DialogDescription>
       <video ref={video} playsInline autoPlay muted className="camera-video" style={{objectFit:'contain'}}/>
       {status&&<p role="status">{status}</p>}
       {error&&<div role="alert" className="notice error">{error}</div>}
-      {multi&&<div className="multi-scanned-list">
+      {multi&&<><div className="multi-scanned-list">
         <b>{Object.keys(entries).length} unique products scanned</b>
         {Object.entries(entries).map(([value,quantity])=><div className="multi-scanned-row" key={value}>
-          <span>{value}</span>
+          <span><b>{describeCode?.(value)||'Unknown product'}</b><small className="block-text">{value}</small></span>
           <button className="btn" type="button" aria-label={'Remove one '+value} onClick={()=>setEntries(previous=>{
             const next={...previous};if(next[value]<=1)delete next[value];else next[value]--;return next;
           })}>−</button>
           <strong>{quantity}</strong>
           <button className="btn" type="button" aria-label={'Add one '+value} onClick={()=>setEntries(previous=>({...previous,[value]:(previous[value]||0)+1}))}>+</button>
         </div>)}
-        <button className="btn primary" disabled={!Object.keys(entries).length} onClick={()=>{
+      </div>
+        <button className="btn primary multi-scan-commit" disabled={!Object.keys(entries).length} onClick={()=>{
           consumed.current=true;stop.current();
           callbacks.current.onScanMany?.(Object.entries(entries).flatMap(([value,quantity])=>Array(quantity).fill(value)));
           callbacks.current.onClose();
-        }}>Add {Object.values(entries).reduce((sum,count)=>sum+count,0)} scanned items</button>
-      </div>}
+        }}>{batchActionLabel} ({Object.values(entries).reduce((sum,count)=>sum+count,0)})</button>
+      </>}
       {devices.length>1&&<Select value={device} onValueChange={setDevice}>
         <SelectTrigger aria-label="Choose camera"><SelectValue/></SelectTrigger>
         <SelectContent><SelectItem value="auto">Rear camera (automatic)</SelectItem>
