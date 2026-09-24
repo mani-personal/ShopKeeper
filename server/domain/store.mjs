@@ -47,7 +47,9 @@ export function mutate(s, a) {
             s.demo = true;
             break;
         case 'product': {
-            const p = a.product;
+            const input = a.product;
+            const emptyPrice = input && (input.price == null || input.price === '' || Number.isNaN(input.price));
+            const p = emptyPrice && num(input.mrp) ? { ...input, price: input.mrp } : input;
             if (!p || !txt(p.name) || typeof p.barcode !== 'string' || p.barcode.length >= 200 || !txt(p.category) || !txt(p.unit) || !['price', 'cost', 'stock', 'min'].every(k => num(p[k])) || !Number.isInteger(p.stock) || !Number.isInteger(p.min))
                 throw Error('Enter valid product details and whole-number stock.');
             if (p.barcode.trim() && s.products.some(x => x.barcode === p.barcode.trim() && x.id !== p.id))
@@ -55,7 +57,7 @@ export function mutate(s, a) {
             const i = s.products.findIndex(x => x.id === p.id);
             if (p.target !== undefined && (!Number.isInteger(p.target) || p.target < 1 || p.target > 10000000))
                 throw Error('Target stock must be a positive whole number.');
-            const mode = p.discountMode ?? 'auto';
+            const mode = p.discountMode ?? 'none';
             const basis = p.discountBasis === 'price' ? p.price : p.cost;
             if (p.discountBasis !== undefined && !['cost', 'price'].includes(p.discountBasis))
                 throw Error('Invalid discount basis.');
