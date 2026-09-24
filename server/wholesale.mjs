@@ -8,6 +8,8 @@ import {
   token,
   digest,
   wholesalePrincipal,
+  employeePermissions,
+  requireEmployeePermission,
 } from "./security.mjs";
 import { transaction } from "./db.mjs";
 import {
@@ -81,7 +83,7 @@ async function sellerData(db, id) {
     .all(id);
   const vendors = await db
     .prepare(
-      `SELECT v.id,v.data,CASE WHEN a.vendor_id IS NULL THEN FALSE ELSE TRUE END AS selected FROM vendors v LEFT JOIN wholesale_vendor_access a ON a.vendor_id=v.id AND a.wholesaler_id=? WHERE v.suspended=FALSE ORDER BY v.created_at,v.id`,
+      `SELECT v.id,v.data,v.suspended,CASE WHEN a.vendor_id IS NULL THEN FALSE ELSE TRUE END AS selected FROM vendors v LEFT JOIN wholesale_vendor_access a ON a.vendor_id=v.id AND a.wholesaler_id=? ORDER BY v.created_at,v.id`,
     )
     .all(id);
   const pricing = await wholesalePricing(db),
@@ -106,6 +108,7 @@ async function sellerData(db, id) {
       id: v.id,
       name: vendorName({ vendor_data: v.data }),
       selected: v.selected === true || v.selected === 1,
+      suspended: v.suspended,
     })),
   };
 }
@@ -154,6 +157,30 @@ export function registerWholesaleRoutes(app, db) {
         "/api/wholesale/subscriptions",
         "/api/wholesale/payment-proof",
       ];
+    if (req.user.role === "vendor" && req.method !== "GET") {
+      const needed = path.includes("/returns")
+        ? "returns"
+        : path.includes("/requests")
+          ? "purchases"
+          : null;
+      if (needed) requireEmployeePermission(req.user, needed);
+    }
+    if (req.user.role === "wholesale" && req.method !== "GET") {
+      const needed = path.includes("/products")
+        ? "inventory"
+        : path.includes("/access")
+          ? "customers"
+          : path.includes("/returns") || path.includes("/refunds")
+            ? "returns"
+          : path.includes("/transactions")
+              ? "payments"
+              : path.includes("/profile") || path.includes("/logo")
+                ? "settings"
+                : path.includes("/requests")
+                  ? "purchases"
+                  : null;
+      if (needed) requireEmployeePermission(req.user, needed);
+    }
     if (
       req.method === "POST" &&
       req.user.role === "wholesale" &&
@@ -280,7 +307,19 @@ export function registerWholesaleRoutes(app, db) {
   });
   app.get("/api/wholesale/portal", async (req, res) => {
     seller(req.user);
-    res.json(await sellerData(db, req.wholesalerId));
+    const data = await sellerData(db, req.wholesalerId),
+      access = employeePermissions(req.user);
+    if (!access.includes("inventory")) data.products = [];
+    if (!access.some((x) => ["purchases", "payments", "returns"].includes(x)))
+      data.requests = [];
+    if (!access.includes("payments")) data.transactions = [];
+    if (!access.some((x) => ["returns", "payments"].includes(x))) {
+      data.returns = [];
+      data.refunds = [];
+    }
+    if (!access.some((x) => ["customers", "payments"].includes(x)))
+      data.vendors = [];
+    res.json({ ...data, permissions: access });
   });
   app.post("/api/wholesale/profile", async (req, res) => {
     seller(req.user);
@@ -377,6 +416,7 @@ export function registerWholesaleRoutes(app, db) {
     res.json(await sellerData(db, req.wholesalerId));
   });
   app.get("/api/wholesale/catalog", async (req, res) => {
+    if (req.user.role === "vendor") requireEmployeePermission(req.user, "purchases");
     const vendor = await requireVendor(
       db,
       req.user,
