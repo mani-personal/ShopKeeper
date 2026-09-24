@@ -626,7 +626,9 @@ function OrderCard({
           <WholesaleInvoiceButton
             order={r}
             sellerName={r.business_name}
-            buyerName="My store"
+            sellerGst={r.gst_number}
+            sellerAddress={r.seller_address}
+            buyerName={r.vendorName || "My store"}
             transactions={transactions}
             returns={returns}
             refunds={refunds}
@@ -859,7 +861,9 @@ function VendorPaymentLedger({ data }: { data: any }) {
                   <WholesaleInvoiceButton
                     order={r}
                     sellerName={r.business_name}
-                    buyerName="My store"
+                    sellerGst={r.gst_number}
+                    sellerAddress={r.seller_address}
+                    buyerName={r.vendorName || "My store"}
                     transactions={data.transactions}
                     returns={data.returns}
                     refunds={data.refunds}
