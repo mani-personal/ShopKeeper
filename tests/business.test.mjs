@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {initial,mutate,supplierAccounts,financialSummary,productDiscount,trialDaysLeft} from '../server/domain/store.mjs';
 import {parseProductCode,parsePrintedMRP} from '../server/domain/product-label.mjs';
-function fixture(){const s=initial();mutate(s,{type:'product',product:{id:'',name:'Polish',barcode:'8901860032427',price:150,cost:110,mrp:160,stock:0,min:1,category:'General',unit:'piece'}});return {s,id:s.products[0].id}}
+function fixture(){const s=initial();mutate(s,{type:'product',product:{id:'',name:'Polish',barcode:'8901860032427',price:150,cost:110,mrp:160,stock:0,min:1,category:'General',unit:'piece',discountMode:'auto'}});return {s,id:s.products[0].id}}
 test('QR metadata and printed MRP preserve barcode and distinguish unit prices',()=>{
  assert.deepEqual(parseProductCode('{"barcode":"0012345678905","mrp":50,"name":"Polish"}'),{barcode:'0012345678905',mrp:50,name:'Polish',source:'qr'});
  assert.equal(parseProductCode('https://example.test/product?barcode=00123&mrp=99.50').mrp,99.5);
