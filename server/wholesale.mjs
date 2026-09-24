@@ -19,6 +19,7 @@ import {
   requireWholesaleActive,
 } from "./wholesale-subscriptions.mjs";
 import { recordActivity } from "./activities.mjs";
+import { businessTypes } from "./domain/vendors.mjs";
 
 const bad = (message, status = 400) =>
   Object.assign(Error(message), { status });
@@ -63,7 +64,7 @@ async function sellerData(db, id) {
     .all(id);
   const items = await db
     .prepare(
-      "SELECT i.*,p.name,p.unit FROM wholesale_request_items i JOIN wholesale_products p ON p.id=i.product_id JOIN wholesale_requests r ON r.id=i.request_id WHERE r.wholesaler_id=? ORDER BY p.name",
+      "SELECT i.*,p.name,p.unit,p.sku FROM wholesale_request_items i JOIN wholesale_products p ON p.id=i.product_id JOIN wholesale_requests r ON r.id=i.request_id WHERE r.wholesaler_id=? ORDER BY p.name",
     )
     .all(id);
   const transactions = await db
@@ -83,9 +84,9 @@ async function sellerData(db, id) {
     .all(id);
   const vendors = await db
     .prepare(
-      `SELECT v.id,v.data,v.suspended,CASE WHEN a.vendor_id IS NULL THEN FALSE ELSE TRUE END AS selected FROM vendors v LEFT JOIN wholesale_vendor_access a ON a.vendor_id=v.id AND a.wholesaler_id=? ORDER BY v.created_at,v.id`,
+      `SELECT v.id,v.data,v.business_type,v.suspended,CASE WHEN a.vendor_id IS NULL THEN FALSE ELSE TRUE END AS selected FROM vendors v LEFT JOIN wholesale_vendor_access a ON a.vendor_id=v.id AND a.wholesaler_id=? WHERE v.business_type=(SELECT business_category FROM wholesalers WHERE user_id=?) ORDER BY v.created_at,v.id`,
     )
-    .all(id);
+    .all(id, id);
   const pricing = await wholesalePricing(db),
     subscription = await wholesaleSubscriptionInfo(db, profile, pricing);
   return {
@@ -107,6 +108,7 @@ async function sellerData(db, id) {
     vendors: vendors.map((v) => ({
       id: v.id,
       name: vendorName({ vendor_data: v.data }),
+      category: v.business_type,
       selected: v.selected === true || v.selected === 1,
       suspended: v.suspended,
     })),
@@ -251,8 +253,9 @@ export function registerWholesaleRoutes(app, db) {
     await limit(db, "wholesale-create:" + req.user.id, 20);
     const mail = email(req.body.email),
       name = text(req.body.name, 100),
-      business = text(req.body.businessName, 150);
-    if (!name || !business)
+      business = text(req.body.businessName, 150),
+      category = text(req.body.businessCategory, 80) || "General store";
+    if (!name || !business || !businessTypes.includes(category))
       throw bad("Enter the seller and wholesale business names.");
     const hash = await hashPassword(req.body.password),
       id = randomUUID();
@@ -266,7 +269,7 @@ export function registerWholesaleRoutes(app, db) {
         .run(id, mail, hash, "wholesale", name, Date.now());
       await db
         .prepare(
-          "INSERT INTO wholesalers(user_id,business_name,phone,address,created_at) VALUES(?,?,?,?,?)",
+          "INSERT INTO wholesalers(user_id,business_name,phone,address,created_at,business_category) VALUES(?,?,?,?,?,?)",
         )
         .run(
           id,
@@ -274,6 +277,7 @@ export function registerWholesaleRoutes(app, db) {
           text(req.body.phone, 30) || "",
           text(req.body.address, 300) || "",
           Date.now(),
+          category,
         );
     });
     res.json({ ok: true });
@@ -364,8 +368,8 @@ export function registerWholesaleRoutes(app, db) {
     await transaction(db, async () => {
       if (unique.length) {
         const found = await db
-          .prepare("SELECT id FROM vendors WHERE id=ANY(?) AND suspended=FALSE")
-          .all(unique);
+          .prepare("SELECT v.id FROM vendors v JOIN wholesalers w ON w.user_id=? WHERE v.id=ANY(?) AND v.suspended=FALSE AND v.business_type=w.business_category")
+          .all(req.wholesalerId, unique);
         if (found.length !== unique.length)
           throw bad("One or more vendors are unavailable.");
       }
@@ -424,9 +428,9 @@ export function registerWholesaleRoutes(app, db) {
     );
     const products = await db
       .prepare(
-        `SELECT p.*,w.business_name FROM wholesale_products p JOIN wholesale_vendor_access a ON a.wholesaler_id=p.wholesaler_id AND a.vendor_id=? JOIN wholesalers w ON w.user_id=p.wholesaler_id JOIN users u ON u.id=p.wholesaler_id WHERE p.active=TRUE AND p.stock>0 AND u.disabled=FALSE ORDER BY w.business_name,p.name`,
+        `SELECT p.*,w.business_name FROM wholesale_products p JOIN wholesale_vendor_access a ON a.wholesaler_id=p.wholesaler_id AND a.vendor_id=? JOIN wholesalers w ON w.user_id=p.wholesaler_id JOIN users u ON u.id=p.wholesaler_id WHERE p.active=TRUE AND p.stock>0 AND u.disabled=FALSE AND w.business_category=? ORDER BY w.business_name,p.name`,
       )
-      .all(vendor.id);
+      .all(vendor.id, vendor.business_type);
     res.json({
       products,
       requests: await vendorRequests(db, vendor.id),
@@ -456,9 +460,9 @@ export function registerWholesaleRoutes(app, db) {
     if (
       !(await db
         .prepare(
-          "SELECT 1 FROM wholesale_vendor_access WHERE wholesaler_id=? AND vendor_id=?",
+          "SELECT 1 FROM wholesale_vendor_access a JOIN wholesalers w ON w.user_id=a.wholesaler_id WHERE a.wholesaler_id=? AND a.vendor_id=? AND w.business_category=?",
         )
-        .get(wholesaler, vendor.id))
+        .get(wholesaler, vendor.id, vendor.business_type))
     )
       throw bad("This wholesale catalog is not shared with your store.", 403);
     const id = randomUUID();
