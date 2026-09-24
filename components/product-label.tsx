@@ -48,7 +48,7 @@ export function ProductLabel({apply}:{apply:(draft:LabelDraft)=>void}){
    {prices.length>1&&<label>MRP candidates<select disabled={busy} value="" onChange={e=>setDraft({...draft,mrp:Number(e.target.value)})}><option value="">Select correct MRP</option>{prices.map(n=><option key={n} value={n}>₹{n.toFixed(2)}</option>)}</select></label>}
    <label>MRP (₹)<input disabled={busy} type="number" min="0.01" max="10000000" step=".01" value={draft.mrp??''} onChange={e=>setDraft({...draft,mrp:e.target.value===''?undefined:Number(e.target.value)})}/></label>
    <label>Barcode<input disabled={busy} maxLength={199} value={draft.barcode??''} onChange={e=>setDraft({...draft,barcode:e.target.value})}/></label>
-   <button type="button" className="btn" disabled={busy||!valid} onClick={()=>{apply({...draft,name:draft.name?.trim(),barcode:draft.barcode?.trim()});setStatus('Reviewed details copied into the product form. Enter cost, selling price and stock, then save.')}}>Use reviewed details</button>
+   <button type="button" className="btn" disabled={busy||!valid} onClick={()=>{apply({...draft,name:draft.name?.trim(),barcode:draft.barcode?.trim()});setStatus('Reviewed details copied into the product form. Enter cost and stock, check the selling price, then save.')}}>Use reviewed details</button>
   </div>
   {raw&&<details><summary>Extracted label text</summary><pre style={{whiteSpace:'pre-wrap'}}>{raw}</pre></details>}
  </section>;
