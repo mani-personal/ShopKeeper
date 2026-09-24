@@ -14,6 +14,7 @@ import {
   Truck,
   ChartNoAxesCombined,
   Settings,
+  CircleHelp,
   Search,
   Plus,
   ArrowUpRight,
@@ -105,6 +106,7 @@ import { InventoryImport } from "./inventory-import";
 import { VendorSubscription } from "./vendor-subscription";
 import { SubscriptionApprovals } from "./subscription-approvals";
 import { VendorWholesale } from "./vendor-wholesale";
+import { ProfileMenu } from "./profile-menu";
 import {
   WholesalerManagement,
   WholesalePricingAdmin,
@@ -153,6 +155,7 @@ const nav = [
   ["Expenses", Wallet],
   ["Settings", Settings],
   ["Vendors", Store],
+  ["Wholesale", Truck],
   ["Vendor access", Users],
   ["Subscription approvals", Check],
   ["Scan bill", Camera],
@@ -164,6 +167,7 @@ const nav = [
 ] as const;
 const pagePermission: Record<string, string> = {
   Vendors: "stores",
+  Wholesale: "wholesale",
   "Vendor access": "vendor_access",
   "Subscription approvals": "subscriptions",
   Pricing: "pricing",
@@ -871,6 +875,7 @@ export default function Home() {
                         "Vendors",
                         "Vendor access",
                         "Subscription approvals",
+                        "Wholesale",
                       ].includes(name)) &&
                   allowedPage(name),
               )
@@ -888,22 +893,8 @@ export default function Home() {
                 </SidebarMenuItem>
               ))}
           </SidebarMenu>
-          <details className="profile-menu">
-            <summary><Users size={18} /> Profile</summary>
-            {(["Account", "Settings", "Employees", "Support"] as const).filter(allowedPage).map((name) => (
-              <button type="button" key={name} className={view === name ? "active" : ""} onClick={() => go(name)}>{name}</button>
-            ))}
-          </details>
         </SidebarContent>
         <SidebarFooter>
-          <button
-            className="rail-signout"
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={logout}
-          >
-            <LogOut size={20} />
-          </button>
           <div className="sidebar-tip">
             <ScanBarcode size={23} />
             <b>A faster way to bill</b>
@@ -972,13 +963,20 @@ export default function Home() {
             <button
               className="icon-button"
               aria-label="Refresh store"
-              onClick={() => refresh()}
+              onClick={() => window.location.reload()}
             >
               <RefreshCw size={18} />
             </button>
-            <button className="text-button" onClick={logout}>
-              Sign out
-            </button>
+            <ProfileMenu name={s.settings.name} detail={email} logo={logo}
+              links={([
+                {label: "My profile", page: "Account", icon: Users},
+                {label: "Payment history & plans", page: "Pricing", icon: IndianRupee},
+                {label: "Sales history", page: "Sales", icon: Receipt},
+                {label: "Account settings", page: "Settings", icon: Settings},
+                {label: "Employees", page: "Employees", icon: Users},
+                {label: "Help & support", page: "Support", icon: CircleHelp},
+              ]).filter((item) => allowedPage(item.page))}
+              onNavigate={go} onLogout={logout} />
           </div>
         </header>
         <div className="page">
@@ -1935,12 +1933,18 @@ export default function Home() {
           {view === "Reports" && <FinanceReport key={vendorId} s={s} />}
           {view === "Super admin" && role === "owner" && (
             <>
-              <MarketplaceAdmin />
               <AdminManagement />
-              <WholesalerManagement />
-              <WholesaleValidityAdmin />
-              <WholesalePricingAdmin />
             </>
+          )}
+          {view === "Wholesale" && isAdmin && (role === "owner" || permissions.includes("wholesale")) && (
+            <div className="wholesale-admin-hub">
+              <header className="panel padded"><span className="eyebrow">WHOLESALE MANAGEMENT</span><h2>Wholesale operations</h2>
+                <p>Manage wholesale sellers, verification, subscription validity and pricing in one place.</p></header>
+              <MarketplaceAdmin />
+              {role === "owner" && <WholesalerManagement />}
+              {role === "owner" && <WholesaleValidityAdmin />}
+              {(role === "owner" || permissions.includes("pricing")) && <WholesalePricingAdmin />}
+            </div>
           )}
           {view === "Page not found" && (
             <section className="panel padded">
@@ -2339,7 +2343,9 @@ export default function Home() {
                   busy={busy || loading}
                 />
               )}
-              {isAdmin && (role === "owner" || permissions.includes("pricing")) && <WholesalePricingAdmin />}
+              {isAdmin && (role === "owner" || permissions.includes("wholesale")) &&
+                <button className="btn" onClick={() => go("Wholesale")}>Manage wholesale accounts and pricing</button>}
+              {role === "admin" && permissions.includes("pricing") && !permissions.includes("wholesale") && <WholesalePricingAdmin />}
               <Pricing
                 key={vendorId}
                 s={s}
