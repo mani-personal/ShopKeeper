@@ -174,6 +174,23 @@ const pagePermission: Record<string, string> = {
   "Scan bill": "purchases",
   Reports: "reports",
   Expenses: "reports",
+  Customers: "sales",
+  Settings: "stores",
+  Employees: "vendor_access",
+};
+const employeePagePermission: Record<string, string> = {
+  Dashboard: "dashboard",
+  "Point of sale": "sales",
+  Inventory: "inventory",
+  Sales: "sales",
+  Purchases: "purchases",
+  "Supply hub": "purchases",
+  "Scan bill": "purchases",
+  Customers: "customers",
+  Reports: "reports",
+  Expenses: "reports",
+  Settings: "settings",
+  Employees: "employees",
 };
 const blank: Product = {
   id: "",
@@ -270,6 +287,14 @@ export default function Home() {
   const [view, setView] = usePageRoute();
   const [logo, setLogo] = useState<string | null>(null);
   const isAdmin = role === "owner" || role === "admin";
+  const allowedPage = (name: string) => {
+    if (role === "vendor" && name === "Supply hub")
+      return ["purchases", "payments", "returns", "inventory"].some((permission) =>
+        permissions.includes(permission),
+      );
+    const required = role === "vendor" ? employeePagePermission[name] : pagePermission[name];
+    return !required || role === "owner" || permissions.includes(required);
+  };
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000);
@@ -341,12 +366,15 @@ export default function Home() {
         (role === "admin" &&
           pagePermission[view] &&
           !permissions.includes(pagePermission[view])) ||
+        (role === "vendor" && !allowedPage(view)) ||
         (["Vendors", "Vendor access", "Subscription approvals"].includes(
           view,
         ) &&
           !isAdmin))
     )
-      go("Dashboard");
+      go(role === "vendor" && !permissions.includes("dashboard")
+        ? nav.map(([name]) => name).find((name) => allowedPage(name) && !["Vendors", "Vendor access", "Subscription approvals", "Super admin"].includes(name)) || "Account"
+        : "Dashboard");
   }, [role, permissions, view]);
   useEffect(() => {
     if (role !== "vendor" || !vendorId) return;
@@ -800,9 +828,7 @@ export default function Home() {
               .slice(0, 7)
               .filter(
                 ([name]) =>
-                  role !== "admin" ||
-                  !pagePermission[name] ||
-                  permissions.includes(pagePermission[name]),
+                  allowedPage(name),
               )
               .map(([name, Icon]) => (
                 <SidebarMenuItem key={name}>
@@ -835,9 +861,7 @@ export default function Home() {
                         "Vendor access",
                         "Subscription approvals",
                       ].includes(name)) &&
-                  (role !== "admin" ||
-                    !pagePermission[name] ||
-                    permissions.includes(pagePermission[name])),
+                  allowedPage(name),
               )
               .map(([name, Icon]) => (
                 <SidebarMenuItem key={name}>
