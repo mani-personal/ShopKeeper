@@ -195,9 +195,9 @@ export function WholesalePortal() {
     "Settings",
     "Support",
   ].filter((name) =>
-    name === "Vendors"
+    !["Reports", "Employees", "Settings", "Support", "Subscription"].includes(name) && (name === "Vendors"
       ? data.permissions?.some((permission: string) => ["customers", "payments"].includes(permission))
-      : !tabAccess[name] || data.permissions?.includes(tabAccess[name]),
+      : !tabAccess[name] || data.permissions?.includes(tabAccess[name])),
   );
   return (
     <main className="wholesale-portal">
@@ -227,6 +227,10 @@ export function WholesalePortal() {
           ))}
         </nav>
         <div className="wholesale-header-actions">
+          <details className="profile-menu"><summary><Users size={17} /> Profile</summary>
+            {(["Subscription", "Settings", "Employees", "Support"] as const).filter((name) => !tabAccess[name] || data.permissions?.includes(tabAccess[name])).map((name) =>
+              <button type="button" key={name} onClick={() => setTab(name)}>{name}</button>)}
+          </details>
           <ThemeToggle />
           <Notifications
             onNavigate={(page) =>
@@ -306,6 +310,8 @@ export function WholesalePortal() {
         {tab === "Overview" && (
           <>
             <Overview data={data} />
+            {data.permissions?.includes("reports") && <WholesaleReports data={data} />}
+            <section className="dashboard-help"><Support /></section>
             <WholesaleOnboarding data={data} />
           </>
         )}{" "}
@@ -414,6 +420,7 @@ export function WholesalePortal() {
                   name: f.get("name"),
                   sku: f.get("sku"),
                   category: f.get("category"),
+                  subcategory: f.get("subcategory"),
                   description: f.get("description"),
                   unit: f.get("unit"),
                   price: Number(f.get("price")),
@@ -450,6 +457,10 @@ export function WholesalePortal() {
                   required
                 />
               </label>
+              <label>Product subcategory
+                <input name="subcategory" maxLength={100} defaultValue={editing.subcategory || ""} placeholder="For example: Rice, lentils, 1 kg packs" />
+              </label>
+              <small>Save each pack weight as a separate product with its own barcode or internal item code.</small>
               <label>
                 Pack / unit
                 <input
@@ -1281,7 +1292,7 @@ function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
                   <small className="block-text">{p.description}</small>
                 )}
               </td>
-              <td data-label="Category">{p.category}</td>
+              <td data-label="Category">{p.category}{p.subcategory && <small className="block-text">{p.subcategory}</small>}</td>
               <td data-label="Barcode">{p.sku || "No barcode"}</td>
               <td data-label="Unit">{p.unit}</td>
               <td data-label="Price">
