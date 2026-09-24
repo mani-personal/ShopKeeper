@@ -26,11 +26,13 @@ test('direct wholesale order, delivery payment and vendor margin receiving',asyn
   const wholesale=await login('seller@example.test','Seller-password-123','wholesale');
   assert.equal((await call('/api/marketplace/profile',{name:'Seller',businessName:'Hosur Foods',gstNumber:'33ABCDE1234F1Z5',phone:'8122187039',address:'Hosur',serviceAreas:'Hosur, Krishnagiri',brands:'RiceCo, FreshMart',minOrder:500,deliveryDays:2,visibilityMode:'public'},wholesale)).status,200);
   assert.equal((await call('/api/marketplace/payment-settings',{upiId:'hosurfoods@upi',payeeName:'Hosur Foods'},wholesale)).status,200);
-  assert.equal((await call('/api/marketplace/products',{name:'Premium rice',sku:'8901234567890',category:'Groceries',description:'25 kg restaurant pack',unit:'25 kg bag',price:900,mrp:1050,stock:50,minQty:2,bulkQty:10,bulkPrice:850,hsnCode:'1006',gstRate:5,active:true},wholesale)).status,200);
+  assert.equal((await call('/api/marketplace/products',{name:'Premium rice',sku:'8901234567890',category:'Groceries',subcategory:'Rice',description:'25 kg restaurant pack',unit:'25 kg bag',price:900,mrp:1050,stock:50,minQty:2,bulkQty:10,bulkPrice:850,hsnCode:'1006',gstRate:5,active:true},wholesale)).status,200);
+  assert.equal((await call('/api/marketplace/products',{name:'Premium rice smaller pack',sku:'8901234567890',category:'Groceries',unit:'5 kg bag',price:220,stock:20,minQty:1,active:true},wholesale)).status,400,'different pack weights cannot silently reuse a barcode');
   const admin=(await call('/api/marketplace/admin',undefined,owner)).data,seller=admin.sellers[0];
   assert.equal((await call('/api/marketplace/admin/verify',{wholesalerId:seller.user_id,verified:true},owner)).status,200);
   r=await call('/api/marketplace/catalog?vendor=main',undefined,vendor);
   const product=r.data.products[0];
+  assert.equal(product.subcategory,'Rice');
   assert.equal(product.verified,true);
   assert.equal((await call('/api/marketplace/requests',{vendorId:'main',items:[{productId:product.id,quantity:1}]},vendor)).status,400);
   r=await call('/api/marketplace/requests',{vendorId:'main',items:[{productId:product.id,quantity:2}],notes:'Deliver before noon'},vendor);
