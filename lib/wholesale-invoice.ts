@@ -7,6 +7,7 @@ export type WholesaleOrder = {
   business_name?: string;
   quoted_total?: number;
   total?: number;
+  item_total?: number;
   delivery_fee?: number;
   items: any[];
 };
