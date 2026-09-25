@@ -33,7 +33,9 @@ import { WholesaleInvoiceButton } from "./wholesale-invoice-dialog";
 import { Employees } from "./employees";
 import { ProfileMenu } from "./profile-menu";
 import { businessTypes } from "@/lib/vendors";
+import { OfflineVendors } from "./offline-vendors";
 
+const paymentTime = (value: number | string) => new Date(Number(value)).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 const statusTone = (status: string) =>
   ["completed", "paid", "processed", "received"].includes(status)
     ? "green"
@@ -65,6 +67,7 @@ export function WholesalePortal() {
     [tab, setTab] = useState("Overview"),
     [message, setMessage] = useState(""),
     [editing, setEditing] = useState<any>(),
+    [lowStockOnly, setLowStockOnly] = useState(false),
     [scanner, setScanner] = useState(false),
     [packingOrder, setPackingOrder] = useState<any>(),
     [scanCode, setScanCode] = useState("");
@@ -93,9 +96,11 @@ export function WholesalePortal() {
   }, [data, tab]);
   async function post(path: string, body: any) {
     try {
-      setData(await api(path, body));
+      const result = await api(path, body);
+      await load();
       setMessage("Saved successfully.");
       setEditing(undefined);
+      return result;
     } catch (e) {
       setMessage((e as Error).message);
     }
@@ -295,13 +300,14 @@ export function WholesalePortal() {
             </div>
           )}
         </div>
-        <div className="notice">
+        <div className="notice subscription-strip">
           <b>{data.subscription.daysRemaining} days remaining</b> ·{" "}
           {data.subscription.period}
           {data.subscription.validUntil
             ? " · Valid until " +
               new Date(data.subscription.validUntil).toLocaleDateString("en-IN")
             : ""}
+          {data.subscription.daysRemaining <= 5 && <strong className="renew-urgent">Renew your wholesale subscription now. {data.subscription.daysRemaining} day(s) left before orders are locked. <button className="btn primary" onClick={() => setTab("Subscription")}>Renew subscription</button></strong>}
         </div>
         {message && (
           <p role="status" className="status-message">
@@ -310,9 +316,8 @@ export function WholesalePortal() {
         )}
         {tab === "Overview" && (
           <>
-            <Overview data={data} />
+            <Overview data={data} onLowStock={() => {setLowStockOnly(true); setTab("Products");}} />
             {data.permissions?.includes("reports") && <WholesaleReports data={data} />}
-            <section className="dashboard-help"><Support /></section>
             <WholesaleOnboarding data={data} />
           </>
         )}{" "}
@@ -366,10 +371,11 @@ export function WholesalePortal() {
                 </button>
               </form>
             </section>
-            <Products data={data} edit={setEditing} />
+            <div className="request-view-tabs"><button className={lowStockOnly ? "btn primary" : "btn"} onClick={() => setLowStockOnly(!lowStockOnly)}>{lowStockOnly ? "Show all inventory" : "Low stock / out of stock"}</button></div>
+            <Products data={data} edit={setEditing} lowStockOnly={lowStockOnly} />
           </>
         )}{" "}
-        {tab === "Vendors" && <VendorAccess data={data} post={post} openRequests={() => setTab("Requests")} />}{" "}
+        {tab === "Vendors" && <><VendorAccess data={data} post={post} openRequests={() => setTab("Requests")} /><OfflineVendors vendors={data.offlineVendors || []} ledger={data.offlineLedger || []} canEdit={data.permissions.includes("customers")} canPay={data.permissions.includes("payments")} save={post} /></>}{" "}
         {tab === "Transactions" && <Transactions data={data} reload={load} setMessage={setMessage} />}{" "}
         {tab === "Returns" && <Returns data={data} post={post} />}{" "}
         {tab === "Refunds" && <Refunds data={data} post={post} />}{" "}
@@ -424,6 +430,7 @@ export function WholesalePortal() {
                   subcategory: f.get("subcategory"),
                   description: f.get("description"),
                   unit: f.get("unit"),
+                  weight: f.get("weight"),
                   price: Number(f.get("price")),
                   mrp: f.get("mrp") === "" ? "" : Number(f.get("mrp")),
                   stock: Number(f.get("stock")),
@@ -469,6 +476,9 @@ export function WholesalePortal() {
                   defaultValue={editing.unit || "piece"}
                   required
                 />
+              </label>
+              <label>Weight / size
+                <input name="weight" maxLength={50} defaultValue={editing.weight || ""} placeholder="500 g, 1 kg, 750 ml" />
               </label>
               <label>
                 Wholesale price
@@ -600,7 +610,7 @@ export function WholesalePortal() {
   );
 }
 
-function Overview({ data }: { data: any }) {
+function Overview({ data, onLowStock }: { data: any; onLowStock: () => void }) {
   const sales = data.transactions
       .filter((x: any) => ["paid", "partial"].includes(x.payment_status))
       .reduce((sum: number, x: any) => sum + Number(x.amount), 0),
@@ -625,6 +635,11 @@ function Overview({ data }: { data: any }) {
   return (
     <div className="wholesale-dashboard">
       <div className="metrics">
+        {data.permissions?.includes("inventory") && <button type="button" className="metric wholesale-low-stock" onClick={onLowStock}>
+          <div><span>Low / out of stock</span><span className="metric-icon tone-2"><Package size={18} /></span></div>
+          <strong>{data.products.filter((x: any) => Number(x.stock) <= Number(x.min_qty || 1)).length}</strong>
+          <small>Open filtered inventory →</small>
+        </button>}
         <div className="metric">
           <div>
             <span>Products</span>
@@ -989,6 +1004,7 @@ function MarketplaceRequests({
   setMessage: (x: string) => void;
   scanToPack: (order: any) => void;
 }) {
+  const [requestView, setRequestView] = useState<"open" | "completed">("open");
   async function call(path: string, body: any, message: string) {
     try {
       await api(path, body);
@@ -1030,8 +1046,12 @@ function MarketplaceRequests({
           <small>Paid, partial or pending.</small>
         </div>
       </section>
-      <div className="order-list">
-        {data.requests.map((r: any) => {
+      <div className="request-view-tabs" role="group" aria-label="Product request status">
+        <button className={requestView === "open" ? "btn primary" : "btn"} onClick={() => setRequestView("open")}>To pack & deliver ({data.requests.filter((r: any) => !["completed", "cancelled"].includes(r.status)).length})</button>
+        <button className={requestView === "completed" ? "btn primary" : "btn"} onClick={() => setRequestView("completed")}>Completed & cancelled ({data.requests.filter((r: any) => ["completed", "cancelled"].includes(r.status)).length})</button>
+      </div>
+      <div className="order-list wholesale-request-tiles">
+        {data.requests.filter((r: any) => requestView === "open" ? !["completed", "cancelled"].includes(r.status) : ["completed", "cancelled"].includes(r.status)).map((r: any) => {
           const finance = orderFinancials(
               r,
               data.transactions,
@@ -1064,7 +1084,7 @@ function MarketplaceRequests({
                   <span key={i.product_id}>
                     <b>{i.name}</b>
                     <em>
-                      {i.quantity} {i.unit}
+                      {i.quantity} {i.unit}{i.weight ? " · " + i.weight : ""}
                     </em>
                   </span>
                 ))}
@@ -1131,9 +1151,9 @@ function MarketplaceRequests({
             </article>
           );
         })}
-        {!data.requests.length && (
+        {!data.requests.some((r: any) => requestView === "open" ? !["completed", "cancelled"].includes(r.status) : ["completed", "cancelled"].includes(r.status)) && (
           <section className="panel padded">
-            <p className="empty-inline">New vendor orders will appear here.</p>
+            <p className="empty-inline">{requestView === "open" ? "No open vendor requests." : "No completed requests yet."}</p>
           </section>
         )}
       </div>
@@ -1218,8 +1238,7 @@ function PaymentManager({
                   : money(Number(p.amount))}
               </b>
               <small>
-                {p.reference ||
-                  new Date(Number(p.created_at)).toLocaleDateString("en-IN")}
+                {paymentTime(p.created_at) + (p.reference ? " · " + p.reference : "")}
               </small>
               {p.payment_status === "pending" && p.submitted_by_vendor && (
                 <span className="actions">
@@ -1262,7 +1281,7 @@ function PaymentManager({
     </section>
   );
 }
-function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
+function Products({ data, edit, lowStockOnly }: { data: any; edit: (x: any) => void; lowStockOnly: boolean }) {
   return (
     <section className="panel table-scroll wholesale-products-table">
       <table className="ledger-table">
@@ -1273,6 +1292,7 @@ function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
               "Category",
               "Barcode",
               "Unit",
+              "Weight",
               "Price / bulk",
               "GST / HSN",
               "Minimum",
@@ -1285,7 +1305,7 @@ function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
           </tr>
         </thead>
         <tbody>
-          {data.products.map((p: any) => (
+          {data.products.filter((p: any) => !lowStockOnly || Number(p.stock) <= Number(p.min_qty || 1)).map((p: any) => (
             <tr key={p.id}>
               <td data-label="Product">
                 <b>{p.name}</b>
@@ -1296,6 +1316,7 @@ function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
               <td data-label="Category">{p.category}{p.subcategory && <small className="block-text">{p.subcategory}</small>}</td>
               <td data-label="Barcode">{p.sku || "No barcode"}</td>
               <td data-label="Unit">{p.unit}</td>
+              <td data-label="Weight">{p.weight || "—"}</td>
               <td data-label="Price">
                 {money(Number(p.price))}
                 {p.bulk_qty && p.bulk_price && (
@@ -1329,6 +1350,7 @@ function Products({ data, edit }: { data: any; edit: (x: any) => void }) {
           Scan or add your first wholesale product.
         </p>
       )}
+      {lowStockOnly && data.products.length > 0 && !data.products.some((p: any) => Number(p.stock) <= Number(p.min_qty || 1)) && <p className="empty-inline">No low-stock or out-of-stock wholesale items.</p>}
     </section>
   );
 }
@@ -1447,7 +1469,7 @@ function VendorAccess({
               {!orders.length && <p className="empty-inline">No orders from this vendor.</p>}
             </div>
             <h3>Payment history</h3>
-            {payments.map((payment: any) => <div className="record-row" key={payment.id}><div><b>{money(Number(payment.amount))} · #{payment.request_id.slice(0, 8).toUpperCase()}</b><small>{new Date(Number(payment.created_at)).toLocaleDateString("en-IN")} · {payment.reference || "No reference"}</small>{payment.rejection_reason && <small>Reason: {payment.rejection_reason}</small>}</div><span className={"badge " + statusTone(payment.payment_status)}>{payment.payment_status === "pending" && payment.submitted_by_vendor ? "UPI awaiting approval" : payment.payment_status}</span></div>)}
+            {payments.map((payment: any) => <div className="record-row" key={payment.id}><div><b>{money(Number(payment.amount))} · #{payment.request_id.slice(0, 8).toUpperCase()}</b><small>{paymentTime(payment.created_at)} · {payment.reference || "No reference"}</small>{payment.rejection_reason && <small>Reason: {payment.rejection_reason}</small>}</div><span className={"badge " + statusTone(payment.payment_status)}>{payment.payment_status === "pending" && payment.submitted_by_vendor ? "UPI awaiting approval" : payment.payment_status}</span></div>)}
             {!payments.length && <p className="empty-inline">No payments recorded.</p>}
             <h3>Returns and refunds</h3>
             {returns.map((item: any) => <div className="record-row" key={item.id}><div><b>{item.product_name} · {item.quantity} {item.unit}</b><small>Order #{item.request_id.slice(0, 8).toUpperCase()} · {item.reason}</small></div><b>{money(Number(item.quantity) * Number(item.unit_price))}</b><span className={"badge " + statusTone(item.status)}>{item.status}</span></div>)}
@@ -1601,8 +1623,7 @@ function Transactions({
                   : money(Number(t.amount))}
               </b>
               <small>
-                {t.reference ||
-                  new Date(Number(t.created_at)).toLocaleDateString("en-IN")}
+                {paymentTime(t.created_at) + (t.reference ? " · " + t.reference : "")}
               </small>
             </div>
             <span className={"badge " + statusTone(t.payment_status)}>
