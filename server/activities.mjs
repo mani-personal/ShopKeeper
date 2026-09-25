@@ -40,7 +40,7 @@ async function visible(db, user, limit = 50) {
   if (user.role === "owner" || user.role === "admin")
     return db
       .prepare(
-        `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id ORDER BY e.created_at DESC LIMIT ?`,
+        `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.category IN ('query','support') OR (e.category='subscription' AND e.title IN ('Subscription requested','Payment reference submitted','Wholesale subscription requested')) ORDER BY e.created_at DESC LIMIT ?`,
       )
       .all(user.id, limit);
   if (user.role === "wholesale") {
@@ -52,13 +52,13 @@ async function visible(db, user, limit = 50) {
       ownerId = member?.wholesaler_id || user.id;
     return db
       .prepare(
-        `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.wholesaler_id=? AND e.scope IN ('wholesale','all') ORDER BY e.created_at DESC LIMIT ?`,
+        `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.wholesaler_id=? AND e.scope IN ('wholesale','all') AND e.category IN ('order','quote','payment','return','subscription') ORDER BY e.created_at DESC LIMIT ?`,
       )
       .all(user.id, ownerId, limit);
   }
   return db
     .prepare(
-      `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.vendor_id IN (SELECT vendor_id FROM memberships WHERE user_id=?) AND e.scope IN ('vendor','all') ORDER BY e.created_at DESC LIMIT ?`,
+      `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.vendor_id IN (SELECT vendor_id FROM memberships WHERE user_id=?) AND e.scope IN ('vendor','all') AND e.category IN ('sale','purchase','supplier_return','supplier_payment','order','quote','payment','return','subscription') ORDER BY e.created_at DESC LIMIT ?`,
     )
     .all(user.id, user.id, limit);
 }
