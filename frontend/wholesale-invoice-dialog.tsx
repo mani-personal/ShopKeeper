@@ -114,7 +114,7 @@ export function WholesaleInvoiceButton({
                       <td>{item.name}</td>
                       <td>{item.hsn_code || "—"}</td>
                       <td>
-                        {item.quantity} {item.unit}
+                        {item.quantity} {item.unit}{item.weight ? " · " + item.weight : ""}
                       </td>
                       <td>{money(Number(item.unit_price))}</td>
                       <td>{Number(item.gst_rate || 0)}%</td>
@@ -157,7 +157,7 @@ export function WholesaleInvoiceButton({
               <table className="ledger-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Date & time</th>
                     <th>Status</th>
                     <th>Amount</th>
                     <th>Reference</th>
@@ -169,7 +169,7 @@ export function WholesaleInvoiceButton({
                       <td>
                         {new Date(
                           Number(payment.created_at),
-                        ).toLocaleDateString("en-IN")}
+                         ).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
                       </td>
                       <td>{payment.payment_status}</td>
                       <td>{money(Number(payment.amount))}</td>
