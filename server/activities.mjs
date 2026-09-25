@@ -40,7 +40,7 @@ async function visible(db, user, limit = 50) {
   if (user.role === "owner" || user.role === "admin")
     return db
       .prepare(
-        `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.category IN ('query','support') OR (e.category='subscription' AND e.title IN ('Subscription requested','Payment reference submitted','Wholesale subscription requested')) ORDER BY e.created_at DESC LIMIT ?`,
+        `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.category IN ('query','support') OR (e.category='subscription' AND e.title IN ('Subscription requested','Payment reference submitted','Wholesale subscription requested','Wholesale payment reference submitted','Vendor extension requested','Wholesale extension requested')) ORDER BY e.created_at DESC LIMIT ?`,
       )
       .all(user.id, limit);
   if (user.role === "wholesale") {
