@@ -93,6 +93,9 @@ async function sellerData(db, id) {
   const offlineLedger = await db.prepare(
     `SELECT l.* FROM wholesale_offline_vendor_ledger l WHERE l.wholesaler_id=? ORDER BY l.created_at DESC,l.id DESC`,
   ).all(id);
+  const expenses = await db.prepare(
+    "SELECT * FROM wholesale_expenses WHERE wholesaler_id=? ORDER BY expense_date DESC,created_at DESC",
+  ).all(id);
   const pricing = await wholesalePricing(db),
     subscription = await wholesaleSubscriptionInfo(db, profile, pricing);
   return {
@@ -120,6 +123,7 @@ async function sellerData(db, id) {
     })),
     offlineVendors,
     offlineLedger,
+    expenses,
   };
 }
 
@@ -338,7 +342,35 @@ export function registerWholesaleRoutes(app, db) {
       data.offlineVendors = [];
       data.offlineLedger = [];
     }
+    if (!access.includes("reports")) data.expenses = [];
     res.json({ ...data, permissions: access });
+  });
+  app.post("/api/wholesale/expenses", async (req, res) => {
+    seller(req.user);
+    requireEmployeePermission(req.user, "reports");
+    await requireWholesaleActive(db, req.user);
+    const id = req.body.id || randomUUID();
+    if (typeof id !== "string" || id.length > 100) throw bad("Invalid expense identifier.");
+    const category = text(req.body.category, 80), description = typeof req.body.description === "string" && req.body.description.length <= 300 ? req.body.description.trim() : null;
+    const date = req.body.expenseDate;
+    const amount = Number(req.body.amount);
+    if (!category || description === null || !Number.isFinite(amount) || amount <= 0 || amount > 10000000 || Math.round(amount*100) !== amount*100 || typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      throw bad("Enter a valid category, date and expense amount.");
+    if (Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) throw bad("Enter a valid expense date.");
+    const owner = await wholesalePrincipal(db, req.user);
+    const result = await db.prepare("INSERT INTO wholesale_expenses(id,wholesaler_id,category,description,amount,expense_date,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET category=EXCLUDED.category,description=EXCLUDED.description,amount=EXCLUDED.amount,expense_date=EXCLUDED.expense_date,updated_at=EXCLUDED.updated_at WHERE wholesale_expenses.wholesaler_id=EXCLUDED.wholesaler_id")
+      .run(id,owner,category,description,amount,date,Date.now(),Date.now());
+    if (!result.changes) throw bad("Expense not found.",404);
+    res.json({ expenses: await db.prepare("SELECT * FROM wholesale_expenses WHERE wholesaler_id=? ORDER BY expense_date DESC,created_at DESC").all(owner) });
+  });
+  app.post("/api/wholesale/expenses/:id/delete", async (req, res) => {
+    seller(req.user);
+    requireEmployeePermission(req.user, "reports");
+    await requireWholesaleActive(db, req.user);
+    const owner = await wholesalePrincipal(db, req.user);
+    const result = await db.prepare("DELETE FROM wholesale_expenses WHERE id=? AND wholesaler_id=?").run(req.params.id, owner);
+    if (!result.changes) throw bad("Expense not found.",404);
+    res.json({ ok:true });
   });
   app.post("/api/wholesale/offline-vendors", async (req, res) => {
     seller(req.user);
