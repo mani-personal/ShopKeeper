@@ -7,7 +7,7 @@ export function ProductLabel({apply}:{apply:(draft:LabelDraft)=>void}){
  const generation=useRef(0),worker=useRef<any>(null);
  useEffect(()=>()=>{generation.current++;worker.current?.terminate().catch(()=>{})},[]);
  useEffect(()=>{if(!file)return;const url=URL.createObjectURL(file);setPreview(url);return()=>URL.revokeObjectURL(url)},[file]);
- function choose(f?:File){if(!f||busy)return;if(!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>12*1024*1024){setStatus('Choose JPG, PNG or WebP under 12 MB.');return}setFile(f);setRotation(0);setStatus('Check the photo, then select Read label. Existing reviewed details are kept when you add another photo.')}
+ function choose(f?:File){if(!f||busy)return;if(!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>12*1024*1024){setStatus('Choose JPG, PNG or WebP under 12 MB.');return}setFile(f);setRotation(0);setStatus('Check the photo, then select Read label. The image is not saved with the product.')}
  async function scan(){
   if(!file||busy)return;
   const session=++generation.current;setBusy(true);setStatus('Reading product name, MRP and barcode…');let w:any;
@@ -35,7 +35,7 @@ export function ProductLabel({apply}:{apply:(draft:LabelDraft)=>void}){
  }
  const valid=(!draft.mrp||(Number.isFinite(draft.mrp)&&draft.mrp>0&&draft.mrp<=10000000))&&(draft.mrp===undefined||draft.mrp>0)&&!!(draft.name?.trim()||draft.barcode?.trim()||draft.mrp);
  return <section className="label-capture">
-  <b>Scan product name & MRP</b><p className="muted small">Barcode scanning identifies a saved product. For a new product, photograph its name and printed MRP. Use separate front and back photos if needed. English text recognition; always review the results.</p>
+  <b>Read label from a photo</b><p className="muted small">Take or upload a photo to read a product name, MRP and barcode. Review the text before copying it into the form. The photo is not saved.</p>
   <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
    <label className="btn">Take photo<input hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={busy} onChange={e=>{choose(e.target.files?.[0]);e.target.value=''}}/></label>
    <label className="btn">Upload photo<input hidden type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={e=>{choose(e.target.files?.[0]);e.target.value=''}}/></label>
