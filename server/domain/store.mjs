@@ -69,7 +69,9 @@ export function mutate(s, a) {
                 throw Error('Custom discount must be between zero and selling price, with at most two decimal places.');
             if (p.subcategory !== undefined && (typeof p.subcategory !== 'string' || p.subcategory.length > 100))
                 throw Error('Subcategory must be at most 100 characters.');
-            const clean = { ...(p.mrp !== undefined ? { mrp: p.mrp } : {}), subcategory: (p.subcategory ?? '').trim(), discountBasis: p.discountBasis ?? "cost", discountMode: mode, customDiscount: mode === 'custom' ? p.customDiscount : 0, target: p.target ?? Math.max(p.stock, p.min * 5, 1), id: i >= 0 ? p.id : id(), name: p.name.trim(), barcode: p.barcode.trim(), category: p.category, unit: p.unit, price: p.price, cost: p.cost, stock: p.stock, min: p.min };
+            if (p.weight !== undefined && (typeof p.weight !== 'string' || p.weight.length > 50))
+                throw Error('Weight must be at most 50 characters.');
+            const clean = { ...(p.mrp !== undefined ? { mrp: p.mrp } : {}), subcategory: (p.subcategory ?? '').trim(), weight: (p.weight ?? '').trim(), discountBasis: p.discountBasis ?? "cost", discountMode: mode, customDiscount: mode === 'custom' ? p.customDiscount : 0, target: p.target ?? Math.max(p.stock, p.min * 5, 1), id: i >= 0 ? p.id : id(), name: p.name.trim(), barcode: p.barcode.trim(), category: p.category, unit: p.unit, price: p.price, cost: p.cost, stock: p.stock, min: p.min };
             if (i >= 0)
                 s.products[i] = clean;
             else
