@@ -7218,6 +7218,9 @@ body.printing-invoice .invoice-sheet td {
 /* Final responsive overrides: keep branded headers and both themes stable. */
 .global-admin { min-height: 100vh; background: var(--background); color: var(--foreground); }
 .global-admin-header { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:20px max(18px,calc((100vw - 1280px)/2)); border-bottom:1px solid var(--border); }
+.global-admin-header .actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.global-admin .admin-subtabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.global-admin .panel-heading { gap:12px; flex-wrap:wrap; }
 .global-admin-header h1 { margin:3px 0 0; font-size:clamp(23px,3vw,32px); }
 .global-admin > .console-tabs { padding:12px max(18px,calc((100vw - 1280px)/2)); overflow-x:auto; white-space:nowrap; max-width:100vw; }
 .global-admin > .page { width:min(1280px,100%); margin:0 auto; padding:18px; }
@@ -7234,6 +7237,7 @@ body.printing-invoice .invoice-sheet td {
 .wholesale-expenses { display:grid; gap:16px; }
 .wholesale-expenses .record-row,.global-admin .record-row { flex-wrap:wrap; min-width:0; }
 @media(max-width:700px){.global-admin-header { padding:14px; flex-wrap:wrap; }.global-admin-header .actions { width:100%; justify-content:flex-end; }.global-admin > .page { padding:12px; }.admin-business-row { flex-wrap:wrap; }.admin-business-row > span:first-child { flex:1 1 100%; }.archive-filters { grid-template-columns:1fr 1fr; }.archive-filters label:first-child { grid-column:1/-1; }.wholesale-portal .page,.workspace .page { min-width:0; padding-inline:12px; }.wholesale-header nav { max-width:100vw; overflow-x:auto; }.transaction-ledger,.wholesale-expenses,.archive-orders { min-width:0; }.record-row { flex-wrap:wrap; }.admin-create-form,.expense-editor { grid-template-columns:1fr; }}
+@media(max-width:700px){.pos-search-row .scan-strip { display:grid; grid-template-columns:auto minmax(0,1fr); }.pos-search-row .scan-strip .btn { justify-content:center; min-width:0; white-space:normal; }.pos-search-row .scan-strip .btn:first-of-type { grid-column:1; }.pos-search-row .scan-strip .btn:last-of-type { grid-column:2; }.global-admin .admin-subtabs { overflow-x:auto; flex-wrap:nowrap; }.global-admin .approval-stack .record-row .actions { width:100%; display:flex; flex-wrap:wrap; }.global-admin .approval-stack .table-scroll { max-width:100%; overflow-x:auto; }}
 .wholesale-header > .wholesale-identity {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
