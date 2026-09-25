@@ -10,12 +10,15 @@ import {
   ShoppingCart,
   Star,
   Truck,
+  Camera,
 } from "lucide-react";
 import { api } from "./api";
 import { money } from "@/lib/store";
 import { orderFinancials } from "@/lib/wholesale-invoice";
 import { WholesaleInvoiceButton } from "./wholesale-invoice-dialog";
 import { UpiPaymentButton } from "./upi-payment";
+import { MobileScanner } from "@/components/mobile-scanner";
+import { parseProductCode } from "@/lib/product-label";
 
 type Product = {
   id: string;
@@ -167,15 +170,6 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
       data.requests
         .filter((r: any) => !["cancelled"].includes(r.status))
         .reduce((s: number, r: any) => s + Number(r.total), 0) - paid;
-  const checklist = [
-    ["Browse verified wholesalers", products.some((p) => p.verified)],
-    ["Favourite a supplier", products.some((p) => p.favourite)],
-    ["Place first order", data.requests.length > 0],
-    [
-      "Receive stock into inventory",
-      data.requests.some((r: any) => r.inventory_received),
-    ],
-  ];
   const tabs = [
     ["Overview", "Home"],
     ["Discover", "Buy stock"],
@@ -229,48 +223,15 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
               icon={<Truck />}
             />
           </div>
-          <section className="panel padded onboarding-card">
-            <div>
-              <span className="eyebrow">GET STARTED</span>
-              <h2>Wholesale ordering checklist</h2>
-              <p>
-                {checklist.filter((x) => x[1]).length} of {checklist.length}{" "}
-                completed
-              </p>
+          <section className="panel padded wholesale-home-actions">
+            <h2>What would you like to do?</h2>
+            <p>Open one section to manage each task. Orders, returns and payments stay together in their own views.</p>
+            <div className="actions">
+              <button className="btn primary" onClick={() => setTab("Discover")}>Buy stock</button>
+              <button className="btn" onClick={() => setTab("Orders")}>My orders ({data.requests.length})</button>
+              <button className="btn" onClick={() => setTab("Returns")}>Return items</button>
+              <button className="btn" onClick={() => setTab("Payments")}>Payments</button>
             </div>
-            <div className="onboarding-list">
-              {checklist.map(([label, done]) => (
-                <span className={done ? "done" : ""} key={String(label)}>
-                  {done ? "✓" : "○"} {label}
-                </span>
-              ))}
-            </div>
-          </section>
-          <section className="panel padded">
-            <div className="panel-heading">
-              <h2>Recent order activity</h2>
-              <button className="btn" onClick={() => void load()}>
-                <RefreshCw size={15} />
-                Refresh
-              </button>
-            </div>
-            {data.requests.slice(0, 5).map((r: any) => (
-              <OrderCard
-                row={r}
-                transactions={data.transactions}
-                returns={data.returns}
-                refunds={data.refunds}
-                vendorId={vendorId}
-                reload={load}
-                setMessage={setMessage}
-                key={r.id}
-              />
-            ))}
-            {!data.requests.length && (
-              <p className="empty-inline">
-                Discover wholesalers and place your first stock order.
-              </p>
-            )}
           </section>
         </>
       )}
@@ -467,6 +428,8 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
           vendorId={vendorId}
           requests={data.requests}
           returns={data.returns}
+          transactions={data.transactions}
+          refunds={data.refunds}
           reload={load}
           setMessage={setMessage}
         />
@@ -693,8 +656,20 @@ function ReceiveWithMargin({
         ),
       ]),
     ),
-    [margins, setMargins] = useState<Record<string, number>>(defaults);
+    [margins, setMargins] = useState<Record<string, number>>(defaults),
+    [barcodes, setBarcodes] = useState<Record<string, string>>({}),
+    [scanningId, setScanningId] = useState(""),
+    [scanError, setScanError] = useState(""),
+    [inventory, setInventory] = useState<any[]>([]);
+  useEffect(() => {
+    let active = true;
+    api("/api/store?vendor=" + encodeURIComponent(vendorId)).then((result) => {
+      if (active) setInventory(result.state?.products || []);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [vendorId]);
   return (
+    <>
     <form
       className="margin-editor"
       onSubmit={(e) => {
@@ -707,29 +682,32 @@ function ReceiveWithMargin({
         );
         void action(
           "/api/marketplace/requests/" + order.id + "/receive",
-          { vendorId, sellingPrices },
+          { vendorId, sellingPrices, barcodes },
           "Items added to inventory with your selling prices.",
         );
       }}
     >
       <div>
         <b>Set your margin before adding stock</b>
-        <small>Margin is your selling price minus wholesale cost.</small>
+        <small>Margin is your selling price minus wholesale cost. New products are created in inventory; matching barcodes update existing stock.</small>
       </div>
       {order.items.map((i: any) => {
         const cost = Number(i.unit_price),
           margin = Number(margins[i.product_id] || 0),
-          selling = round2(cost + margin);
+          selling = round2(cost + margin),
+          code = barcodes[i.product_id] ?? i.sku ?? "",
+          existing = code ? inventory.find((p: any) => p.barcode === code.trim()) : inventory.find((p: any) => p.name.toLowerCase() === i.name.toLowerCase());
         return (
-          <label key={i.product_id}>
+          <div className="received-item" key={i.product_id}>
             <span>
               <b>{i.name}</b>
               <small>
-                Cost {money(cost)}
+                {i.quantity} {i.unit}{i.weight ? " · " + i.weight : ""} · Cost {money(cost)}
                 {i.mrp ? " · MRP " + money(Number(i.mrp)) : ""}
               </small>
+              <small className="block-text">{existing ? `Updates ${existing.name} in inventory (${existing.stock} currently)` : "New product — added to inventory on receipt"}</small>
             </span>
-            <span>
+            <label>
               Margin ₹
               <input
                 aria-label={"Margin for " + i.name}
@@ -745,15 +723,26 @@ function ReceiveWithMargin({
                   })
                 }
               />
-            </span>
+            </label>
+            <label className="receive-barcode">
+              Barcode to save in inventory
+              <span><input aria-label={"Barcode for " + i.name} value={code} maxLength={199} placeholder="Scan or type; optional" onChange={(e) => setBarcodes({ ...barcodes, [i.product_id]: e.target.value })} />
+              <button className="btn" type="button" aria-label={"Scan barcode for " + i.name} onClick={() => setScanningId(i.product_id)}><Camera size={16} /> Scan</button></span>
+            </label>
             <strong>Sell at {money(selling)}</strong>
-          </label>
+          </div>
         );
       })}
+      {scanError && <p role="alert" className="notice error">{scanError}</p>}
       <button className="btn primary large-action">
         Received — add to my stock
       </button>
     </form>
+    <MobileScanner open={Boolean(scanningId)} onClose={() => setScanningId("")} onScan={(raw) => {
+      try {const code = parseProductCode(raw).barcode; if (code) {setBarcodes((value) => ({...value,[scanningId]:code}));setScanError("");}}
+      catch (error) {setScanError((error as Error).message);}
+    }} />
+    </>
   );
 }
 const round2 = (value: number) =>
@@ -937,12 +926,16 @@ function ReturnManager({
   vendorId,
   requests,
   returns,
+  transactions,
+  refunds,
   reload,
   setMessage,
 }: {
   vendorId: string;
   requests: any[];
   returns: any[];
+  transactions: any[];
+  refunds: any[];
   reload: () => Promise<void>;
   setMessage: (x: string) => void;
 }) {
@@ -955,8 +948,15 @@ function ReturnManager({
           businessName: r.business_name,
         })),
       ),
-    [lineKey, setLineKey] = useState("");
+    [lineKey, setLineKey] = useState(""),
+    [selectedReturn, setSelectedReturn] = useState("");
   const line = lines.find((x) => x.requestId + "|" + x.product_id === lineKey);
+  const available = line ? Math.max(0, Number(line.quantity) - returns.filter((r:any) => r.request_id === line.requestId && r.product_id === line.product_id && r.status !== "rejected").reduce((sum:number,r:any) => sum + Number(r.quantity), 0)) : 0;
+  const detail = returns.find((r:any) => r.id === selectedReturn),
+    detailOrder = requests.find((r:any) => r.id === detail?.request_id),
+    detailPayments = transactions.filter((p:any) => p.request_id === detail?.request_id),
+    detailRefunds = refunds.filter((refund:any) => detailPayments.some((p:any) => p.id === refund.transaction_id)),
+    financials = detailOrder ? orderFinancials(detailOrder, transactions, returns, refunds) : null;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -1002,15 +1002,16 @@ function ReturnManager({
               ))}
             </select>
           </label>
+          {line && <p className="notice compact"><b>Wholesale dealer: {line.businessName}</b> · Order #{line.requestId.slice(0,8).toUpperCase()} · {available} {line.unit} available to return · Paid price {money(Number(line.unit_price))} each</p>}
           <label>
             Return quantity
             <input
               name="quantity"
               type="number"
               min="1"
-              max={line?.quantity || 1}
+              max={available || 1}
               required
-              disabled={!line}
+              disabled={!line || !available}
             />
           </label>
           <label>
@@ -1031,7 +1032,7 @@ function ReturnManager({
             Reason
             <textarea name="reason" maxLength={300} required disabled={!line} />
           </label>
-          <button className="btn primary" disabled={!line}>
+          <button className="btn primary" disabled={!line || !available}>
             Submit return
           </button>
         </form>
@@ -1049,9 +1050,9 @@ function ReturnManager({
           </thead>
           <tbody>
             {returns.map((r: any) => (
-              <tr key={r.id}>
-                <td>{r.product_name}</td>
-                <td>{r.business_name}</td>
+              <tr key={r.id} className={selectedReturn === r.id ? "return-row selected" : "return-row"} tabIndex={0} aria-selected={selectedReturn === r.id} onClick={() => setSelectedReturn(selectedReturn === r.id ? "" : r.id)} onKeyDown={(e) => {if(e.key === "Enter" || e.key === " "){e.preventDefault();setSelectedReturn(selectedReturn === r.id ? "" : r.id)}}}>
+                <td><b>{r.product_name}</b><small className="block-text">Order #{r.request_id.slice(0,8).toUpperCase()} · Click for details</small></td>
+                <td><b>{r.business_name}</b><small className="block-text">Wholesale dealer</small></td>
                 <td>
                   {r.quantity} {r.unit}
                 </td>
@@ -1067,6 +1068,22 @@ function ReturnManager({
           <p className="empty-inline">No returns submitted.</p>
         )}
       </section>
+      {detail && <section className="panel padded return-details" aria-live="polite">
+        <div className="panel-heading"><div><h2>{detail.product_name} return</h2><p>Wholesale dealer: <b>{detail.business_name}</b> · Order #{detail.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={() => setSelectedReturn("")}>Close details</button></div>
+        <div className="return-detail-grid">
+          <span><small>Return status</small><b>{detail.status}</b></span>
+          <span><small>Order status</small><b>{detailOrder ? orderLabel[detailOrder.status] || detailOrder.status : "Unavailable"}</b></span>
+          <span><small>Quantity / price</small><b>{detail.quantity} {detail.unit} × {money(Number(detail.unit_price))}</b></span>
+          <span><small>Return value</small><b>{money(Number(detail.quantity) * Number(detail.unit_price))}</b></span>
+          {financials && <><span><small>Order paid</small><b>{money(financials.paid)}</b></span><span><small>Balance due</small><b>{money(financials.balance)}</b></span><span><small>Return credit applied</small><b>{money(financials.returnCredit)}</b></span><span><small>Refund due</small><b>{money(financials.refundDue)}</b></span></>}
+        </div>
+        <p><b>Reason:</b> {detail.reason}</p>
+        <p className="muted small">Return requested {new Date(Number(detail.created_at)).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}. Credit applies to the order when the wholesaler marks the return received.</p>
+        <h3>Order payment history</h3>
+        {detailPayments.map((p:any) => <div className="record-row" key={p.id}><div><b>{p.payment_status}</b><small>{new Date(Number(p.created_at)).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})} · {p.reference || "No reference"}</small></div><b>{money(Number(p.amount))}</b></div>)}
+        {!detailPayments.length && <p className="empty-inline">No payments recorded for this order.</p>}
+        {detailRefunds.length > 0 && <><h3>Refunds</h3>{detailRefunds.map((r:any) => <div className="record-row" key={r.id}><div><b>{r.status} · {r.reason}</b></div><b>{money(Number(r.amount))}</b></div>)}</>}
+      </section>}
     </div>
   );
 }
