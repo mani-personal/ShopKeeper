@@ -9,6 +9,7 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
  const mrp=(p:Sale['items'][number])=>Number.isFinite(Number(p.mrp))&&Number(p.mrp)>=p.price&&Number(p.mrp)>0?Number(p.mrp):null;
  const saved=Math.max(0,subtotal-Number(sale.total))+sale.items.reduce((t,p)=>t+(mrp(p)===null?0:(mrp(p)!-p.price)*p.qty),0);
  const hasAllMrp=sale.items.length>0&&sale.items.every(p=>mrp(p)!==null);
+ const mrpTotal=sale.items.reduce((t,p)=>t+(mrp(p)??p.price)*p.qty,0);
  const row=(label:string,n:number,cls='')=>'<div class="receipt-summary '+cls+'"><span>'+e(label)+'</span><strong>'+e(amount(n))+'</strong></div>';
  return '<article class="receipt-document"><header><h1>'+e(settings.name)+'</h1>'+
  (settings.address?'<p class="receipt-address">'+e(settings.address)+'</p>':'')+
@@ -16,11 +17,10 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
  '<h2>SALES RECEIPT</h2></header><dl class="receipt-meta"><dt>Receipt</dt><dd>'+e(sale.id)+'</dd><dt>Date</dt><dd>'+e(new Date(sale.date).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))+' IST</dd><dt>Customer</dt><dd>'+e(sale.customer)+'</dd><dt>Payment</dt><dd>'+e(sale.payment)+'</dd></dl>'+
  (demo?'<p class="receipt-demo">DEMO — NOT A REAL TRANSACTION</p>':'')+
  '<p class="receipt-currency">All amounts in INR</p><table class="receipt-lines"><colgroup><col style="width:44%"><col style="width:26%"><col style="width:30%"></colgroup><thead><tr><th>Item / Qty</th><th class="numeric">Rate</th><th class="numeric">Amount</th></tr></thead>'+
- sale.items.map((p,i)=>{const reduction=sale.productDiscount!==undefined?productDiscount(p):0;return '<tbody class="receipt-item"><tr><td colspan="3" class="receipt-name">'+e(i+1)+'. '+e(p.name)+'</td></tr><tr><td>'+e(p.qty)+' × '+e(p.unit)+(mrp(p)!==null?'<br/><small>MRP '+e(amount(mrp(p)!))+' / '+e(p.unit)+'</small>':'')+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr>'+(reduction?'<tr><td colspan="3" class="receipt-line-discount">Product discount '+e(amount(reduction))+' / '+e(p.unit)+'</td></tr>':'')+'</tbody>'}).join('')+
- '</table><section class="receipt-totals">'+row('Subtotal',subtotal)+
- (hasAllMrp?row('MRP total',sale.items.reduce((t,p)=>t+mrp(p)!*p.qty,0)):'')+
- (sale.productDiscount!==undefined?row('Product discounts',-sale.productDiscount)+row('Extra bill discount',-(sale.billDiscount??sale.discount-sale.productDiscount)):row('Discount',-sale.discount))+
- row('TOTAL PAID',sale.total,'receipt-grand')+row('Customer saved'+(hasAllMrp?' vs MRP':''),saved)+'</section><footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
+ sale.items.map((p,i)=>{const reduction=sale.productDiscount!==undefined?productDiscount(p):0;return '<tbody class="receipt-item"><tr><td colspan="3" class="receipt-name">'+e(i+1)+'. '+e(p.name)+'</td></tr><tr><td>'+e(p.qty)+' × '+e(p.unit)+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr><tr><td colspan="3" class="receipt-item-detail">MRP: '+(mrp(p)===null?'not recorded':e(amount(mrp(p)!))+' / '+e(p.unit))+' · Discount: '+e(amount(reduction))+' / '+e(p.unit)+'</td></tr></tbody>'}).join('')+
+ '</table><section class="receipt-totals">'+row('MRP total',mrpTotal)+(hasAllMrp?'':'<p class="receipt-mrp-note">* Missing MRP uses selling price in this total.</p>')+row('Selling price subtotal',subtotal)+
+ (sale.productDiscount!==undefined?row('Product discount',-sale.productDiscount)+row('Bill discount',-(sale.billDiscount??sale.discount-sale.productDiscount)):row('Discount',-sale.discount))+
+ row('TOTAL PAID',sale.total,'receipt-grand')+row('Customer saved'+(hasAllMrp?' vs MRP':' (known MRP)'),saved,'receipt-savings')+'</section><footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
 }
 export function receiptCSS(paper:ReceiptPaper):string{
  const width=paper==='58'?'48mm':paper==='80'?'72mm':'186mm';
@@ -42,13 +42,15 @@ export function receiptCSS(paper:ReceiptPaper):string{
  .receipt-lines td{padding:2px;vertical-align:top;overflow-wrap:anywhere}
  .receipt-lines .numeric{text-align:right}
  .receipt-lines .receipt-name{padding-top:7px;font-weight:700}
- .receipt-line-discount{font-size:9px;text-align:right}
+ .receipt-item-detail{font-size:${paper==='58'?'9':'11'}px;font-weight:600;padding-bottom:6px!important}
+ .receipt-mrp-note{font-size:9px;line-height:1.2;margin:1px 0 7px!important}
  .receipt-item{break-inside:avoid;page-break-inside:avoid}
  .receipt-lines thead{display:table-header-group}
  .receipt-totals{margin-top:10px;border-top:1px dashed #000;padding-top:6px;break-inside:avoid;page-break-inside:avoid}
  .receipt-summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:10px;margin:5px 0}
  .receipt-summary strong{text-align:right;overflow-wrap:anywhere}
  .receipt-grand{border-top:1px solid #000;padding-top:7px;margin-top:7px;font-size:${paper==='58'?'12':'15'}px;font-weight:700}
+ .receipt-savings{border-top:1px dashed #000;padding-top:5px;font-weight:700}
  .receipt-document footer{text-align:center;margin-top:12px;border-top:1px dashed #000;padding-top:8px;break-inside:avoid}
  .receipt-demo{text-align:center;font-weight:700}
  @page{size:${paper==='A4'?'A4':'auto'};margin:${paper==='58'?'5mm':paper==='80'?'4mm':'12mm'}}
