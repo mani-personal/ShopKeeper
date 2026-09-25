@@ -273,9 +273,11 @@ export default function Home() {
     [period, setPeriod] = useState("Last 7 days"),
     [camera, setCamera] = useState(false),
     [cameraPurpose, setCameraPurpose] = useState<"sale" | "inventory" | "product">("sale"),
+    [productPhotoMode,setProductPhotoMode] = useState(false),
     [multiSaleScan, setMultiSaleScan] = useState(false),
     [batchNotice, setBatchNotice] = useState(""),
     [historyExpanded, setHistoryExpanded] = useState(false);
+  useEffect(()=>{if(modal!=="product")setProductPhotoMode(false)},[modal]);
   const [version, setVersion] = useState(0),
     [codeKind, setCodeKind] = useState("activate");
   const [role, setRole] = useState(""),
@@ -1446,9 +1448,9 @@ export default function Home() {
                   <Camera size={16} />
                   Scan bill
                 </button>
-                <button className="btn" onClick={() => {setCameraPurpose("inventory");setCamera(true)}}>
-                  <Camera size={16} />
-                  Scan product to add
+                <button className="btn" onClick={() => {setProductPhotoMode(false);setCameraPurpose("inventory");setCamera(true)}}>
+                  <ScanBarcode size={16} />
+                  Scan product
                 </button>
               </div>
               <Choice
@@ -2391,7 +2393,8 @@ export default function Home() {
                 }
               }}
             >
-              <ProductLabel
+              <div className="product-capture-actions"><button type="button" className="btn primary" onClick={() => {setCameraPurpose("product");setCamera(true)}}><ScanBarcode size={16}/> Scan product</button><button type="button" className="btn" aria-expanded={productPhotoMode} onClick={()=>setProductPhotoMode(mode=>!mode)}><Camera size={16}/> {productPhotoMode?'Hide photo options':'Read label from photo (optional)'}</button></div>
+              {productPhotoMode&&<ProductLabel
                 key={product.id || "new"}
                 apply={(draft) =>
                   setProduct((p) => ({
@@ -2402,10 +2405,7 @@ export default function Home() {
                     ...(draft.mrp !== undefined && !Number.isFinite(p.price) ? {price: draft.mrp} : {}),
                   }))
                 }
-              />
-              <button type="button" className="btn" onClick={() => {setCameraPurpose("product");setCamera(true)}}>
-                <Camera size={16} /> Scan barcode with camera
-              </button>
+              />}
               <button
                 type="button"
                 className="btn"
