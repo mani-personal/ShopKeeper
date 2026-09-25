@@ -5,6 +5,10 @@ const amount=(n:number)=>Number.isFinite(n)?n.toLocaleString('en-IN',{minimumFra
 export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):string{
  const e=escapeReceipt;
  const subtotal=sale.items.reduce((t,p)=>t+p.price*p.qty,0);
+ // Each sale keeps a snapshot of its products. Older sales may not have an MRP.
+ const mrp=(p:Sale['items'][number])=>Number.isFinite(Number(p.mrp))&&Number(p.mrp)>=p.price&&Number(p.mrp)>0?Number(p.mrp):null;
+ const saved=Math.max(0,Number(sale.discount||0))+sale.items.reduce((t,p)=>t+(mrp(p)===null?0:(mrp(p)!-p.price)*p.qty),0);
+ const hasAllMrp=sale.items.length>0&&sale.items.every(p=>mrp(p)!==null);
  const row=(label:string,n:number,cls='')=>'<div class="receipt-summary '+cls+'"><span>'+e(label)+'</span><strong>'+e(amount(n))+'</strong></div>';
  return '<article class="receipt-document"><header><h1>'+e(settings.name)+'</h1>'+
  (settings.address?'<p class="receipt-address">'+e(settings.address)+'</p>':'')+
@@ -12,10 +16,11 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
  '<h2>SALES RECEIPT</h2></header><dl class="receipt-meta"><dt>Receipt</dt><dd>'+e(sale.id)+'</dd><dt>Date</dt><dd>'+e(new Date(sale.date).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))+' IST</dd><dt>Customer</dt><dd>'+e(sale.customer)+'</dd><dt>Payment</dt><dd>'+e(sale.payment)+'</dd></dl>'+
  (demo?'<p class="receipt-demo">DEMO — NOT A REAL TRANSACTION</p>':'')+
  '<p class="receipt-currency">All amounts in INR</p><table class="receipt-lines"><colgroup><col style="width:44%"><col style="width:26%"><col style="width:30%"></colgroup><thead><tr><th>Item / Qty</th><th class="numeric">Rate</th><th class="numeric">Amount</th></tr></thead>'+
- sale.items.map((p,i)=>'<tbody class="receipt-item"><tr><td colspan="3" class="receipt-name">'+e(i+1)+'. '+e(p.name)+'</td></tr><tr><td>'+e(p.qty)+' × '+e(p.unit)+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr></tbody>').join('')+
+ sale.items.map((p,i)=>'<tbody class="receipt-item"><tr><td colspan="3" class="receipt-name">'+e(i+1)+'. '+e(p.name)+'</td></tr><tr><td>'+e(p.qty)+' × '+e(p.unit)+(mrp(p)!==null?'<br/><small>MRP '+e(amount(mrp(p)!))+' / '+e(p.unit)+'</small>':'')+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr></tbody>').join('')+
  '</table><section class="receipt-totals">'+row('Subtotal',subtotal)+
+ (hasAllMrp?row('MRP total',sale.items.reduce((t,p)=>t+mrp(p)!*p.qty,0)):'')+
  (sale.productDiscount!==undefined?row('Product discounts',-sale.productDiscount)+row('Extra bill discount',-(sale.billDiscount??sale.discount-sale.productDiscount)):row('Discount',-sale.discount))+
- row('TOTAL PAID',sale.total,'receipt-grand')+'</section><footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
+ row('TOTAL PAID',sale.total,'receipt-grand')+row('You saved'+(hasAllMrp?' vs MRP':''),saved)+'</section><footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
 }
 export function receiptCSS(paper:ReceiptPaper):string{
  const width=paper==='58'?'48mm':paper==='80'?'72mm':'186mm';
