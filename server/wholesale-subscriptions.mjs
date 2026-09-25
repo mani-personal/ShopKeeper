@@ -161,9 +161,10 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
   });
   app.post("/api/wholesale/subscriptions/:id/approve", async (req, res) => {
     requireOwner(req.user, "subscriptions");
+    await transaction(db,async()=>{
     const row = await db
       .prepare(
-        "SELECT h.*,w.valid_until FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.id=? AND h.kind='payment' AND h.status='pending'",
+        "SELECT h.*,w.valid_until FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.id=? AND h.kind='payment' AND h.status='pending' FOR UPDATE OF h,w",
       )
       .get(req.params.id);
     if (!row) throw bad("Pending wholesale payment not found.", 404);
@@ -186,7 +187,20 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
       title: "Wholesale subscription approved",
       detail: `${row.days} days added to the existing remaining validity.`,
     });
+    });
     res.json({ ok: true });
+  });
+  app.post("/api/wholesale/subscriptions/:id/reject",async(req,res)=>{
+    requireOwner(req.user,"subscriptions");
+    const reason=String(req.body.reason||"").trim();
+    if(!reason||reason.length>150) throw bad("Enter a rejection reason (up to 150 characters).");
+    await transaction(db,async()=>{
+      const row=await db.prepare("SELECT wholesaler_id FROM wholesale_subscription_history WHERE id=? AND kind='payment' AND status='pending' FOR UPDATE").get(req.params.id);
+      if(!row) throw bad("Pending wholesale subscription not found.",404);
+      await db.prepare("UPDATE wholesale_subscription_history SET status='rejected',approved_at=?,actor=? WHERE id=?").run(Date.now(),req.user.id,req.params.id);
+      await recordActivity(db,{actorId:req.user.id,wholesalerId:row.wholesaler_id,scope:"wholesale",category:"subscription",title:"Subscription payment declined",detail:reason,route:"Subscription"});
+    });
+    res.json({ok:true});
   });
   app.post("/api/wholesale/subscriptions/extend", async (req, res) => {
     requireOwner(req.user, "subscriptions");
