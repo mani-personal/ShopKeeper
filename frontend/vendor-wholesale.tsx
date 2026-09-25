@@ -89,6 +89,7 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
     [query, setQuery] = useState(""),
     [category, setCategory] = useState("All"),
     [seller, setSeller] = useState("");
+  const [transactionView, setTransactionView] = useState("Payments");
   async function load() {
     try {
       setData(
@@ -174,8 +175,7 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
     ["Overview", "Home"],
     ["Discover", "Buy stock"],
     ["Orders", "My orders"],
-    ["Returns", "Return items"],
-    ["Payments", "Payments"],
+    ["Transactions", "Transactions"],
   ];
   return (
     <div className="vendor-wholesale-console">
@@ -229,8 +229,8 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
             <div className="actions">
               <button className="btn primary" onClick={() => setTab("Discover")}>Buy stock</button>
               <button className="btn" onClick={() => setTab("Orders")}>My orders ({data.requests.length})</button>
-              <button className="btn" onClick={() => setTab("Returns")}>Return items</button>
-              <button className="btn" onClick={() => setTab("Payments")}>Payments</button>
+              <button className="btn" onClick={() => {setTab("Transactions");setTransactionView("Returns")}}>Return items</button>
+              <button className="btn" onClick={() => {setTab("Transactions");setTransactionView("Payments")}}>Payments</button>
             </div>
           </section>
         </>
@@ -423,7 +423,8 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
           )}
         </section>
       )}
-      {tab === "Returns" && (
+      {tab === "Transactions" && <div className="console-tabs" role="tablist" aria-label="Transaction records">{["Payments","Returns","Refunds"].map(x=><button key={x} role="tab" aria-selected={transactionView===x} className={transactionView===x?"active":""} onClick={()=>setTransactionView(x)}>{x}</button>)}</div>}
+      {tab === "Transactions" && transactionView === "Returns" && (
         <ReturnManager
           vendorId={vendorId}
           requests={data.requests}
@@ -434,7 +435,8 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
           setMessage={setMessage}
         />
       )}{" "}
-      {tab === "Payments" && <VendorPaymentLedger data={data} />}
+      {tab === "Transactions" && transactionView === "Payments" && <VendorPaymentLedger data={data} />}
+      {tab === "Transactions" && transactionView === "Refunds" && <section className="panel padded"><h2>Refund history</h2>{data.refunds.map((refund:any)=><button type="button" className="admin-business-row" key={refund.id} onClick={()=>{setTransactionView("Payments");setMessage("Refund #"+refund.id.slice(0,8).toUpperCase()+" belongs to order #"+refund.request_id.slice(0,8).toUpperCase())}}><span><b>{refund.business_name} · {money(Number(refund.amount))}</b><small>{refund.reason} · {new Date(Number(refund.created_at)).toLocaleString("en-IN")}</small></span><span className={"badge "+tone(refund.status)}>{refund.status}</span></button>)}{!data.refunds.length&&<p className="empty-inline">No refunds yet.</p>}</section>}
     </div>
   );
 }
@@ -748,6 +750,8 @@ function ReceiveWithMargin({
 const round2 = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 function VendorPaymentLedger({ data }: { data: any }) {
+  const [selected,setSelected]=useState("");
+  const payment=data.transactions.find((t:any)=>t.id===selected), order=data.requests.find((r:any)=>r.id===payment?.request_id), orderPayments=data.transactions.filter((t:any)=>t.request_id===payment?.request_id), orderReturns=data.returns.filter((r:any)=>r.request_id===payment?.request_id), orderRefunds=data.refunds.filter((r:any)=>r.request_id===payment?.request_id);
   const suppliers = [
     ...new Map(
       data.requests.map((r: any) => [
@@ -883,7 +887,7 @@ function VendorPaymentLedger({ data }: { data: any }) {
           </thead>
           <tbody>
             {data.transactions.map((payment: any) => (
-              <tr key={payment.id}>
+              <tr key={payment.id} className="return-row" tabIndex={0} onClick={()=>setSelected(payment.id)} onKeyDown={e=>{if(e.key==="Enter"){setSelected(payment.id)}}}>
                 <td>
                   {new Date(Number(payment.created_at)).toLocaleString(
                     "en-IN", { dateStyle: "medium", timeStyle: "short" },
@@ -914,6 +918,7 @@ function VendorPaymentLedger({ data }: { data: any }) {
           <p className="empty-inline">No payments recorded yet.</p>
         )}
       </section>
+      {payment&&<section className="panel padded return-details"><div className="panel-heading"><div><h2>Transaction #{payment.id.slice(0,8).toUpperCase()}</h2><p>{payment.business_name} · Order #{payment.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={()=>setSelected("")}>Close</button></div><p><b>Payment:</b> {money(Number(payment.amount))} · {payment.payment_status} · {payment.reference||"No reference"}</p><p><b>Order:</b> {order?.status||"Unavailable"} · {order?.items?.map((i:any)=>i.name+" × "+i.quantity).join(", ")}</p><h3>Payment history</h3>{orderPayments.map((p:any)=><div className="record-row" key={p.id}><b>{money(Number(p.amount))} · {p.payment_status}</b><small>{new Date(Number(p.created_at)).toLocaleString("en-IN")} · {p.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{orderReturns.map((r:any)=><div className="record-row" key={r.id}><b>{r.product_name} · {r.status}</b><small>{r.quantity} {r.unit} × {money(Number(r.unit_price))}</small></div>)}{orderRefunds.map((r:any)=><div className="record-row" key={r.id}><b>Refund {money(Number(r.amount))} · {r.status}</b><small>{r.reason}</small></div>)}</section>}
       {!data.requests.length && (
         <section className="panel padded">
           <p>No supplier orders or payments yet.</p>
