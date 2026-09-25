@@ -6,6 +6,8 @@ import { registerWholesaleSubscriptionRoutes } from "./wholesale-subscriptions.m
 import { wholesalePricing } from "./wholesale-subscriptions.mjs";
 import { registerMarketplaceRoutes } from "./marketplace.mjs";
 import { registerEmployeeRoutes } from "./employees.mjs";
+import { registerBusinessRoutes } from "./businesses.mjs";
+import { sendResetEmail } from "./reset-email.mjs";
 import {
   pricing,
   validity,
@@ -52,6 +54,7 @@ export function createApp(
     secure = false,
     trustProxy = false,
     frontend = "dist",
+    resetMailer = sendResetEmail,
   } = {},
 ) {
   const app = express();
@@ -197,6 +200,28 @@ export function createApp(
     });
     res.json({ ok: true });
   });
+  app.post("/api/auth/forgot", async (req, res) => {
+    const mail = email(req.body.email);
+    await limit(db, "forgot-ip:" + digest(req.ip || ""), 12);
+    await limit(db, "forgot-email:" + digest(mail), 3, 3600000);
+    if (resetMailer === sendResetEmail && (!process.env.RESEND_API_KEY || !process.env.RESET_FROM_EMAIL))
+      throw bad("Password recovery email is unavailable. Contact support.",503);
+    const user = await db.prepare("SELECT id,role,disabled FROM users WHERE email=?").get(mail);
+    if (user && !user.disabled) {
+      const code = token(), path = user.role === "wholesale" ? "/wholesale/login" : ["admin","owner"].includes(user.role) ? "/admin/login" : "/";
+      const link = appOrigin + path + "?email=" + encodeURIComponent(mail) + "#reset=" + encodeURIComponent(code);
+      await transaction(db, async () => {
+        await db.prepare("DELETE FROM tokens WHERE email=? AND kind='reset'").run(mail);
+        await db.prepare("INSERT INTO tokens VALUES(?,?,?,?,?)").run(digest(code),mail,null,"reset",Date.now()+30*60000);
+      });
+      try { await resetMailer({ to: mail, link }); }
+      catch (error) {
+        await db.prepare("DELETE FROM tokens WHERE hash=?").run(digest(code));
+        console.error("Password recovery delivery failed:", error instanceof Error ? error.message : "Unknown error");
+      }
+    }
+    res.json({ ok:true, message:"If this email has an account, a reset link has been sent." });
+  });
   app.use("/api", async (req, res, next) => {
     const user = await readSession(db, req);
     if (!user) return res.status(401).json({ error: "Sign in to continue." });
@@ -219,6 +244,7 @@ export function createApp(
   registerMarketplaceRoutes(app, db);
   registerActivityRoutes(app, db);
   registerEmployeeRoutes(app, db);
+  registerBusinessRoutes(app, db);
   app.get("/api/auth/me", (req, res) =>
     res.json({
       user: {
