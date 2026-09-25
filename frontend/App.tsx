@@ -717,6 +717,7 @@ export default function Home() {
               "Product",
               "Barcode",
               "Category",
+              "Weight",
               "Selling price",
               "Stock",
               "Status",
@@ -746,6 +747,7 @@ export default function Home() {
               </TableCell>
               <TableCell className="mono">{p.barcode}</TableCell>
               <TableCell>{p.category}{p.subcategory && <small className="block-text">{p.subcategory}</small>}</TableCell>
+              <TableCell>{p.weight || "—"}</TableCell>
               <TableCell>
                 <b>{money(netPrice(p))}</b>
                 {productDiscount(p) > 0 && (
@@ -1099,6 +1101,8 @@ export default function Home() {
               <button className="btn" onClick={() => go("Pricing")}>
                 View plans
               </button>
+              {subscription.validUntil && subscription.validUntil > clock && subscription.validUntil - clock <= 5 * 86400000 &&
+                <strong className="renew-urgent">Renew your subscription now. {Math.ceil((subscription.validUntil - clock) / 86400000)} day(s) left before sales are locked.</strong>}
             </div>
           )}
           {saleLocked && view !== "Super admin" && (
@@ -1118,7 +1122,6 @@ export default function Home() {
               <h2>Today’s sales and profit</h2>
               <FinanceCards s={s} from={today} to={today} dashboard />
               {(role === "owner" || permissions.includes("reports")) && <FinanceReport key={vendorId} s={s} />}
-              <section className="dashboard-help"><Support /></section>
               <div className="notice">
                 Current supplier payable:{" "}
                 <b>
@@ -1325,7 +1328,7 @@ export default function Home() {
                       setLowOnly(true);
                     }}
                   >
-                    View inventory <ArrowUpRight size={16} />
+                    View low-stock inventory <ArrowUpRight size={16} />
                   </button>
                 </div>
                 {low.length ? (
@@ -2530,6 +2533,10 @@ export default function Home() {
               <label>Product subcategory
                 <input value={product.subcategory ?? ""} maxLength={100} placeholder="For example: Rice, biscuits, 500 ml packs"
                   onChange={(e) => setProduct({ ...product, subcategory: e.target.value })} />
+              </label>
+              <label>Weight / size
+                <input value={product.weight ?? ""} maxLength={50} placeholder="For example: 500 g, 1 kg, 750 ml"
+                  onChange={(e) => setProduct({ ...product, weight: e.target.value })} />
               </label>
               {product.mrp !== undefined && (
                 <button
