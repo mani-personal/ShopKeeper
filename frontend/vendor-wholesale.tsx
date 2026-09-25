@@ -31,6 +31,7 @@ type Product = {
   name: string;
   sku: string;
   unit: string;
+  weight?: string;
   category: string;
   description: string;
   price: number;
@@ -369,7 +370,7 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
                   </div>
                   <h3>{p.name}</h3>
                   <small>
-                    {p.business_name} · {p.unit}
+                    {p.business_name} · {p.weight ? p.weight + " · " : ""}{p.unit}
                     {p.sku ? " · " + p.sku : ""}
                   </small>
                   {p.description && <p>{p.description}</p>}
@@ -895,8 +896,8 @@ function VendorPaymentLedger({ data }: { data: any }) {
             {data.transactions.map((payment: any) => (
               <tr key={payment.id}>
                 <td>
-                  {new Date(Number(payment.created_at)).toLocaleDateString(
-                    "en-IN",
+                  {new Date(Number(payment.created_at)).toLocaleString(
+                    "en-IN", { dateStyle: "medium", timeStyle: "short" },
                   )}
                 </td>
                 <td>{payment.business_name}</td>
