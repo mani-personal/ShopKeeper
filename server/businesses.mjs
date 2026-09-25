@@ -9,14 +9,43 @@ import { wholesalePricing, wholesaleSubscriptionInfo } from "./wholesale-subscri
 const bad = (message, status = 400) => Object.assign(Error(message), { status });
 const field = (value, max = 150) => typeof value === "string" && value.trim() && value.trim().length <= max ? value.trim() : "";
 function access(user, kind) { requirePermission(user, kind === "vendor" ? "stores" : "wholesale"); }
+// Escape CSV cells including spreadsheet formulas supplied through product names.
+export function csvCell(value) {
+  const string = String(value ?? "").replace(/^\s*([=+@\-])/, "'$&");
+  return '"' + string.replaceAll('"', '""') + '"';
+}
+const exportColumns = ["Business","Category","Product","Subcategory","Barcode / SKU","Weight","Unit","MRP","Selling price","Cost price","Quantity","Status"];
+const inventoryCSV = rows => '\uFEFF' + [exportColumns, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 export function registerBusinessRoutes(app, db) {
+  app.get("/api/admin/inventory/export", async (req, res) => {
+    const kind = req.query.kind;
+    if (!["vendor", "wholesale"].includes(kind)) throw bad("Choose vendor or wholesale inventory.");
+    requirePermission(req.user, kind === "vendor" ? "inventory" : "wholesale");
+    const id = typeof req.query.id === "string" ? req.query.id : null;
+    const rows = [];
+    if (kind === "vendor") {
+      const stores = id ? await db.prepare("SELECT id,business_type,data FROM vendors WHERE id=?").all(id) : await db.prepare("SELECT id,business_type,data FROM vendors ORDER BY id").all();
+      if (id && !stores.length) throw bad("Vendor not found.",404);
+      for (const store of stores) {
+        const state = JSON.parse(store.data);
+        for (const p of state.products || []) rows.push([state.settings.name, store.business_type, p.name, p.subcategory, p.barcode, p.weight, p.unit, p.mrp, p.price, p.cost, p.stock, p.stock > 0 ? "In stock" : "Out of stock"]);
+      }
+    } else {
+      if (id && !await db.prepare("SELECT 1 FROM wholesalers WHERE user_id=?").get(id)) throw bad("Wholesale seller not found.",404);
+      const products = id ? await db.prepare("SELECT p.*,w.business_name,w.business_category FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id WHERE w.user_id=? ORDER BY w.business_name,p.name").all(id) : await db.prepare("SELECT p.*,w.business_name,w.business_category FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id ORDER BY w.business_name,p.name").all();
+      for (const p of products) rows.push([p.business_name,p.business_category,p.name,p.subcategory,p.sku,p.weight,p.unit,p.mrp,p.price,p.cost_price,p.stock,p.active ? "Active" : "Inactive"]);
+    }
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    res.set("Content-Disposition", `attachment; filename="shopkeeper-${kind}-inventory.csv"`);
+    res.send(inventoryCSV(rows));
+  });
   app.get("/api/admin/businesses", async (req, res) => {
     const showVendors = hasPermission(req.user, "stores"), showWholesale = hasPermission(req.user, "wholesale");
     if (!showVendors && !showWholesale) throw bad("Administrator access required.", 403);
-    const vendors = showVendors ? await db.prepare("SELECT id,owner_name,business_type,data,suspended,valid_until,trial_days,logo_image FROM vendors ORDER BY created_at DESC").all() : [];
+    const vendors = showVendors ? await db.prepare("SELECT v.id,v.owner_name,v.business_type,v.data,v.suspended,v.valid_until,v.trial_days,v.logo_image,(SELECT u.email FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.vendor_id=v.id AND u.employee_permissions IS NULL ORDER BY u.created_at LIMIT 1) AS email FROM vendors v ORDER BY v.created_at DESC").all() : [];
     const wholesalers = showWholesale ? await db.prepare("SELECT w.*,u.name,u.email,u.disabled FROM wholesalers w JOIN users u ON u.id=w.user_id WHERE u.employee_permissions IS NULL ORDER BY w.created_at DESC").all() : [];
-    res.json({ vendors: vendors.map(v => ({ id:v.id, name:JSON.parse(v.data).settings.name, owner:v.owner_name, category:v.business_type, logo:v.logo_image, suspended:v.suspended, validUntil:v.valid_until, trialDays:v.trial_days })), wholesalers: wholesalers.map(w=>({id:w.user_id,name:w.business_name,owner:w.name,email:w.email,category:w.business_category,logo:w.logo_image,disabled:w.disabled,validUntil:w.valid_until})) });
+    res.json({ vendors: vendors.map(v => ({ id:v.id, name:JSON.parse(v.data).settings.name, owner:v.owner_name, email:v.email, category:v.business_type, logo:v.logo_image, suspended:v.suspended, validUntil:v.valid_until, trialDays:v.trial_days })), wholesalers: wholesalers.map(w=>({id:w.user_id,name:w.business_name,owner:w.name,email:w.email,category:w.business_category,logo:w.logo_image,disabled:w.disabled,validUntil:w.valid_until})) });
   });
   app.post("/api/admin/businesses", async (req, res) => {
     const kind = req.body.kind;
@@ -50,9 +79,10 @@ export function registerBusinessRoutes(app, db) {
       if (!v) throw bad("Vendor not found.",404);
       const state=JSON.parse(v.data), subscription=await subscriptionInfo(db,v,await pricing(db));
       const employees=hasPermission(req.user,"vendor_access") ? await db.prepare("SELECT u.id,u.name,u.email,u.employee_designation FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.vendor_id=? ORDER BY u.created_at").all(id) : [];
+      const account=await db.prepare("SELECT u.email FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.vendor_id=? AND u.employee_permissions IS NULL ORDER BY u.created_at LIMIT 1").get(id);
       const orders=await db.prepare("SELECT r.id,r.status,r.created_at,w.business_name AS other,r.vendor_id FROM wholesale_requests r JOIN wholesalers w ON w.user_id=r.wholesaler_id WHERE r.vendor_id=? ORDER BY r.created_at DESC LIMIT 100").all(id);
       const payments=await db.prepare("SELECT t.id,t.request_id,t.amount,t.payment_status,t.reference,t.created_at FROM wholesale_transactions t JOIN wholesale_requests r ON r.id=t.request_id WHERE r.vendor_id=? ORDER BY t.created_at DESC LIMIT 100").all(id);
-      return res.json({kind,id,name:state.settings.name,owner:v.owner_name,phone:state.settings.phone,category:v.business_type,suspended:v.suspended,subscription,employees,orders,payments,products:state.products.length,sales:state.sales.length,revenue:state.sales.reduce((n,x)=>n+Number(x.total||0),0)});
+      return res.json({kind,id,name:state.settings.name,owner:v.owner_name,email:account?.email,phone:state.settings.phone,category:v.business_type,suspended:v.suspended,subscription,employees,orders,payments,products:state.products.length,sales:state.sales.length,revenue:state.sales.reduce((n,x)=>n+Number(x.total||0),0)});
     }
     const w=await db.prepare("SELECT w.*,u.name,u.email,u.disabled FROM wholesalers w JOIN users u ON u.id=w.user_id WHERE w.user_id=? AND u.employee_permissions IS NULL").get(id);
     if (!w) throw bad("Wholesaler not found.",404);
