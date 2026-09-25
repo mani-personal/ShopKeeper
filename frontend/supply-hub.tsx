@@ -1,7 +1,25 @@
-import {useState} from 'react';
-import {Plus} from 'lucide-react';
-import {State} from '@/lib/store';
-import {SupplierAccounts} from './supplier-accounts';
-import {VendorWholesale} from './vendor-wholesale';
+import { useState } from "react";
+import { Plus } from "lucide-react";
+import type { State } from "@/lib/store";
+import { SupplierAccounts } from "./supplier-accounts";
+import { VendorWholesale } from "./vendor-wholesale";
 
-export function SupplyHub({s,vendorId,busy,save,onAddSupplier}:{s:State;vendorId:string;busy:boolean;save:(a:any)=>Promise<any>;onAddSupplier:()=>void}){const [tab,setTab]=useState('Supplier directory');return <div className="supply-hub"><div className="panel padded supply-intro"><span className="eyebrow">SUPPLIERS + WHOLESALE</span><h2>Supply hub</h2><p>A wholesaler can be one of your suppliers, while local suppliers can remain simple contacts. Manage both from one place without losing either workflow.</p><div className="console-tabs">{['Supplier directory','Supplier accounts','Wholesale marketplace'].map(x=><button key={x} className={tab===x?'active':''} onClick={()=>setTab(x)}>{x}</button>)}</div></div>{tab==='Supplier directory'&&<section className="panel"><div className="panel-heading"><div><h2>Supplier directory</h2><p>Contacts for local suppliers and wholesale sellers.</p></div><button className="btn primary" onClick={onAddSupplier}><Plus size={16}/>Add supplier</button></div><div className="table-scroll"><table className="ledger-table"><thead><tr><th>Name</th><th>Phone</th><th>Type</th></tr></thead><tbody>{s.suppliers.map(x=><tr key={x.id}><td><b>{x.name}</b></td><td>{x.phone||'—'}</td><td><span className="badge green">Supplier</span></td></tr>)}</tbody></table>{!s.suppliers.length&&<p className="empty-inline">Add your first supplier, or open the wholesale marketplace.</p>}</div></section>}{tab==='Supplier accounts'&&<SupplierAccounts key={vendorId} s={s} busy={busy} save={save}/>} {tab==='Wholesale marketplace'&&<VendorWholesale vendorId={vendorId}/>}</div>}
+export function SupplyHub({ s, vendorId, busy, save, onAddSupplier }: { s: State; vendorId: string; busy: boolean; save: (a: any) => Promise<any>; onAddSupplier: () => void }) {
+  const [tab, setTab] = useState("Wholesale Market");
+  return <div className="supply-hub">
+    <div className="panel padded supply-intro">
+      <span className="eyebrow">BUY & MANAGE STOCK</span>
+      <h2>Supply hub</h2>
+      <p>Buy from wholesalers, or keep local supplier contacts and balances.</p>
+      <div className="console-tabs" role="tablist" aria-label="Supply hub sections">
+        {["Wholesale Market", "Local suppliers", "Supplier balances"].map((item) => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}
+      </div>
+    </div>
+    {tab === "Wholesale Market" && <VendorWholesale vendorId={vendorId} />}
+    {tab === "Local suppliers" && <section className="panel">
+      <div className="panel-heading"><div><h2>Local suppliers</h2><p>Contacts who do not use the wholesale marketplace.</p></div><button className="btn primary" onClick={onAddSupplier}><Plus size={16} /> Add supplier</button></div>
+      <div className="table-scroll"><table className="ledger-table"><thead><tr><th>Name</th><th>Phone</th></tr></thead><tbody>{s.suppliers.map((item) => <tr key={item.id}><td><b>{item.name}</b></td><td>{item.phone || "—"}</td></tr>)}</tbody></table>{!s.suppliers.length && <p className="empty-inline">Add a local supplier to keep their details here.</p>}</div>
+    </section>}
+    {tab === "Supplier balances" && <SupplierAccounts key={vendorId} s={s} busy={busy} save={save} />}
+  </div>;
+}
