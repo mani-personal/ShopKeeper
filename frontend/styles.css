@@ -7216,6 +7216,24 @@ body.printing-invoice .invoice-sheet td {
 @media(max-width:560px){.received-item { grid-template-columns: 1fr; }.received-item > span:first-child { grid-column: auto; }.receive-barcode > span { flex-wrap: wrap; }.receive-barcode .btn { width: 100%; }.return-detail-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.employee-list .record-row .actions { flex-wrap: wrap; }}
 
 /* Final responsive overrides: keep branded headers and both themes stable. */
+.global-admin { min-height: 100vh; background: var(--background); color: var(--foreground); }
+.global-admin-header { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:20px max(18px,calc((100vw - 1280px)/2)); border-bottom:1px solid var(--border); }
+.global-admin-header h1 { margin:3px 0 0; font-size:clamp(23px,3vw,32px); }
+.global-admin > .console-tabs { padding:12px max(18px,calc((100vw - 1280px)/2)); overflow-x:auto; white-space:nowrap; max-width:100vw; }
+.global-admin > .page { width:min(1280px,100%); margin:0 auto; padding:18px; }
+.admin-business-list { display:grid; gap:8px; margin-top:14px; }
+.admin-business-row { display:flex; align-items:center; justify-content:space-between; text-align:left; gap:16px; width:100%; padding:13px 16px; color:inherit; background:var(--card); border:1px solid var(--border); border-radius:12px; cursor:pointer; }
+.admin-business-row:hover,.admin-business-row:focus-visible { outline:2px solid var(--primary); }
+.admin-business-row > span:first-child { display:grid; min-width:0; gap:4px; }
+.admin-business-row small { color:var(--muted-foreground); overflow-wrap:anywhere; }
+.admin-create-form,.expense-editor,.archive-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; align-items:end; }
+.archive-order { border-top:1px solid var(--border); }
+.archive-order:first-of-type { margin-top:14px; }
+.archive-order .admin-business-row { border:0; border-radius:0; }
+.archive-detail { padding:18px; display:grid; gap:9px; }
+.wholesale-expenses { display:grid; gap:16px; }
+.wholesale-expenses .record-row,.global-admin .record-row { flex-wrap:wrap; min-width:0; }
+@media(max-width:700px){.global-admin-header { padding:14px; flex-wrap:wrap; }.global-admin-header .actions { width:100%; justify-content:flex-end; }.global-admin > .page { padding:12px; }.admin-business-row { flex-wrap:wrap; }.admin-business-row > span:first-child { flex:1 1 100%; }.archive-filters { grid-template-columns:1fr 1fr; }.archive-filters label:first-child { grid-column:1/-1; }.wholesale-portal .page,.workspace .page { min-width:0; padding-inline:12px; }.wholesale-header nav { max-width:100vw; overflow-x:auto; }.transaction-ledger,.wholesale-expenses,.archive-orders { min-width:0; }.record-row { flex-wrap:wrap; }.admin-create-form,.expense-editor { grid-template-columns:1fr; }}
 .wholesale-header > .wholesale-identity {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
