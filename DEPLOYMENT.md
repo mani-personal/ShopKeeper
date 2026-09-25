@@ -35,10 +35,14 @@ Add these as private **Production** environment variables in Vercel Project Sett
 | ADMIN_EMAIL | Your owner login email |
 | ADMIN_PASSWORD | Your own strong 12–128 character password |
 | SEED_DEMO | true for demo stores on first initialization, otherwise false |
+| RESEND_API_KEY | Resend API key for self-service password recovery email |
+| RESET_FROM_EMAIL | Verified sender address, for example `Shopkeeper <accounts@yourdomain.com>` |
 
 Do not prefix secrets with VITE_. The frontend and API share one domain; no API URL or public database key is required.
 
 If you do not yet know the production URL, complete the initial deployment to obtain it, set APP_ORIGIN and redeploy before using the app. Use the canonical production URL, not the changing deployment URL. Adding/changing environment variables requires redeployment.
+
+Password recovery uses these last two variables to email a single-use reset link. Verify the sending domain in Resend before using it. If these variables are missing, signed-in users can still change their passwords in Account Settings, but the forgotten-password form displays a recovery-unavailable message. Never put the email API key in a `VITE_` variable.
 
 Use a separate database or Neon branch for previews. Do not connect untrusted preview deployments to the production database. If testing authenticated previews, configure their exact APP_ORIGIN separately.
 
