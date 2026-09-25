@@ -7218,6 +7218,33 @@ body.printing-invoice .invoice-sheet td {
 /* Final responsive overrides: keep branded headers and both themes stable. */
 .global-admin { min-height: 100vh; background: var(--background); color: var(--foreground); }
 .global-admin-header { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:20px max(18px,calc((100vw - 1280px)/2)); border-bottom:1px solid var(--border); }
+.global-admin .global-admin-management { grid-template-columns:minmax(0,1fr); gap:16px; }
+.global-admin-management .admin-accounts-table { width:100%; min-width:870px; table-layout:fixed; }
+.global-admin-management .admin-accounts-table th:nth-child(1) { width:21%; }
+.global-admin-management .admin-accounts-table th:nth-child(2) { width:45%; }
+.global-admin-management .admin-accounts-table th:nth-child(3) { width:10%; }
+.global-admin-management .admin-accounts-table th:nth-child(4) { width:24%; }
+.global-admin-management .admin-accounts-table td { vertical-align:top; min-width:0; overflow-wrap:anywhere; }
+.global-admin-management .admin-accounts-table .permission-grid.compact { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.global-admin-management .admin-accounts-table .permission-grid label { line-height:1.4; white-space:normal; min-width:0; }
+.global-admin-management .admin-accounts-table .permission-grid input { flex:0 0 auto; }
+.global-admin-management .admin-accounts-table td:last-child .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.global-admin-management .admin-accounts-table td:last-child .btn,.global-admin-management .admin-accounts-table td:last-child .text-button { white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+.subscription-review-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.subscription-review-actions .btn { white-space:nowrap; }
+.product-capture-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:12px 0; }
+.product-capture-actions .btn { white-space:normal; }
+@media(max-width:480px) { .product-capture-actions .btn { flex:1 1 100%; } }
+@media(max-width:980px) {
+  .global-admin-management .admin-accounts-table { min-width:0; table-layout:auto; }
+  .global-admin-management .admin-accounts-table thead { display:none; }
+  .global-admin-management .admin-accounts-table tbody,.global-admin-management .admin-accounts-table tr { display:block; }
+  .global-admin-management .admin-accounts-table tr { padding:14px; margin-bottom:12px; border:1px solid var(--border); border-radius:12px; }
+  .global-admin-management .admin-accounts-table td { display:block; width:100%; border:0; padding:7px 0; }
+  .global-admin-management .admin-accounts-table td:nth-child(2) { padding-block:12px; }
+  .global-admin-management .admin-accounts-table .permission-grid.compact { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:420px) { .global-admin-management .admin-accounts-table .permission-grid.compact { grid-template-columns:1fr; } }
 .global-admin-header .actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
 .global-admin .admin-subtabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .global-admin .panel-heading { gap:12px; flex-wrap:wrap; }
