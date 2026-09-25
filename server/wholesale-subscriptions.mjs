@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { requireOwner, wholesalePrincipal } from "./security.mjs";
 import { recordActivity } from "./activities.mjs";
+import { transaction } from "./db.mjs";
 
 const bad = (message, status = 400) =>
   Object.assign(Error(message), { status });
@@ -116,13 +117,44 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
         "UPDATE wholesale_subscription_history SET reference=? WHERE id=?",
       )
       .run(req.body.reference.trim(), row.id);
+    await recordActivity(db,{actorId:req.user.id,wholesalerId:ownerId,scope:"admin",category:"subscription",title:"Wholesale payment reference submitted",detail:`Payment ${row.id.slice(0,8)} is ready for review.`,route:"Wholesalers"});
     res.json({ ok: true });
+  });
+  app.post("/api/wholesale/subscriptions/extension-request", async (req,res) => {
+    if(req.user.role!=="wholesale"||req.user.employee_permissions!==null) throw bad("Wholesale owner access required.",403);
+    const ownerId=await wholesalePrincipal(db,req.user),days=Number(req.body.days),reason=String(req.body.reason||"").trim();
+    if(!Number.isInteger(days)||days<1||days>3650||!reason||reason.length>100) throw bad("Enter 1–3650 days and a reason (up to 100 characters).");
+    await transaction(db,async()=>{
+      await db.prepare("SELECT user_id FROM wholesalers WHERE user_id=? FOR UPDATE").get(ownerId);
+      if(await db.prepare("SELECT id FROM wholesale_subscription_history WHERE wholesaler_id=? AND kind='extension_request' AND status='pending'").get(ownerId)) throw bad("Your previous extension request is awaiting review.",409);
+      await db.prepare("INSERT INTO wholesale_subscription_history(id,wholesaler_id,kind,amount,days,status,reference,created_at,actor) VALUES(?,?,?,?,?,?,?,?,?)").run(randomUUID(),ownerId,"extension_request",0,days,"pending",reason,Date.now(),req.user.id);
+      await recordActivity(db,{actorId:req.user.id,wholesalerId:ownerId,scope:"admin",category:"subscription",title:"Wholesale extension requested",detail:`${days} days requested: ${reason}`,route:"Wholesalers"});
+    });
+    res.json({ok:true});
+  });
+  app.get("/api/wholesale/subscriptions/extensions/pending", async (req,res) => {
+    requireOwner(req.user,"subscriptions");
+    const rows=await db.prepare("SELECT h.*,w.business_name FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.kind='extension_request' AND h.status='pending' ORDER BY h.created_at").all();
+    res.json({requests:rows});
+  });
+  app.post("/api/wholesale/subscriptions/extensions/:id/review", async (req,res) => {
+    requireOwner(req.user,"subscriptions");
+    if(!["approve","reject"].includes(req.body.action)) throw bad("Choose approve or reject.");
+    await transaction(db,async()=>{
+    const row=await db.prepare("SELECT h.*,w.valid_until FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.id=? AND h.kind='extension_request' AND h.status='pending' FOR UPDATE OF h,w").get(req.params.id);
+    if(!row) throw bad("Extension request not found.",404);
+    const until=req.body.action==="approve"?Math.max(Date.now(),Number(row.valid_until)||0)+row.days*86400000:null;
+    await db.prepare("UPDATE wholesale_subscription_history SET status=?,approved_at=?,valid_until=?,actor=? WHERE id=?").run(req.body.action==="approve"?"approved":"rejected",Date.now(),until,req.user.id,row.id);
+    if(until) await db.prepare("UPDATE wholesalers SET valid_until=? WHERE user_id=?").run(until,row.wholesaler_id);
+    await recordActivity(db,{actorId:req.user.id,wholesalerId:row.wholesaler_id,scope:"wholesale",category:"subscription",title:req.body.action==="approve"?"Extension approved":"Extension declined",detail:`${row.days} days`,route:"Subscription"});
+    });
+    res.json({ok:true});
   });
   app.get("/api/wholesale/subscriptions/pending", async (req, res) => {
     requireOwner(req.user, "subscriptions");
     const rows = await db
       .prepare(
-        `SELECT h.*,w.business_name,EXISTS(SELECT 1 FROM wholesale_payment_proofs p WHERE p.payment_id=h.id) AS has_proof FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.status='pending' ORDER BY h.created_at`,
+        `SELECT h.*,w.business_name,EXISTS(SELECT 1 FROM wholesale_payment_proofs p WHERE p.payment_id=h.id) AS has_proof FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.kind='payment' AND h.status='pending' ORDER BY h.created_at`,
       )
       .all();
     res.json({ requests: rows });
@@ -131,7 +163,7 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
     requireOwner(req.user, "subscriptions");
     const row = await db
       .prepare(
-        "SELECT h.*,w.valid_until FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.id=? AND h.status='pending'",
+        "SELECT h.*,w.valid_until FROM wholesale_subscription_history h JOIN wholesalers w ON w.user_id=h.wholesaler_id WHERE h.id=? AND h.kind='payment' AND h.status='pending'",
       )
       .get(req.params.id);
     if (!row) throw bad("Pending wholesale payment not found.", 404);
