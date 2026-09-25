@@ -1,57 +1,79 @@
 import { productDiscount } from './store.mjs';
 export const escapeReceipt = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const amount = (n) => Number.isFinite(n) ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+const rupees = (n) => '₹ ' + amount(n);
 export function receiptMarkup(sale, settings, demo = false) {
     const e = escapeReceipt;
-    const subtotal = sale.items.reduce((t, p) => t + p.price * p.qty, 0);
-    // Each sale keeps a snapshot of its products. Older sales may not have an MRP.
+    const subtotal = sale.items.reduce((sum, p) => sum + p.price * p.qty, 0);
     const mrp = (p) => Number.isFinite(Number(p.mrp)) && Number(p.mrp) >= p.price && Number(p.mrp) > 0 ? Number(p.mrp) : null;
-    const saved = Math.max(0, subtotal - Number(sale.total)) + sale.items.reduce((t, p) => t + (mrp(p) === null ? 0 : (mrp(p) - p.price) * p.qty), 0);
-    const hasAllMrp = sale.items.length > 0 && sale.items.every(p => mrp(p) !== null);
-    const mrpTotal = sale.items.reduce((t, p) => t + (mrp(p) ?? p.price) * p.qty, 0);
-    const row = (label, n, cls = '') => '<div class="receipt-summary ' + cls + '"><span>' + e(label) + '</span><strong>' + e(amount(n)) + '</strong></div>';
+    const mrpTotal = sale.items.reduce((sum, p) => sum + (mrp(p) ?? p.price) * p.qty, 0);
+    const allMrp = sale.items.length > 0 && sale.items.every(p => mrp(p) !== null);
+    const productSavings = sale.items.reduce((sum, p) => sum + (mrp(p) === null ? 0 : (mrp(p) - p.price) * p.qty), 0);
+    const discount = Math.max(0, subtotal - Number(sale.total));
+    const saved = discount + productSavings;
+    const productDiscountTotal = sale.productDiscount ?? 0;
+    const billDiscount = sale.productDiscount === undefined ? sale.discount : (sale.billDiscount ?? sale.discount - sale.productDiscount);
+    const totalQty = sale.items.reduce((sum, p) => sum + p.qty, 0);
+    const row = (label, value, cls = '') => '<div class="receipt-summary ' + cls + '"><span>' + e(label) + '</span><strong>' + e(value) + '</strong></div>';
+    const lines = sale.items.map((p, i) => {
+        const reduction = sale.productDiscount !== undefined ? productDiscount(p) : 0;
+        const metadata = [p.weight?.trim(), p.barcode?.trim() ? 'SKU ' + p.barcode.trim() : ''].filter(Boolean).join(' · ');
+        return '<tbody class="receipt-item"><tr class="receipt-item-title"><td colspan="6">' + e(i + 1) + '. ' + e(p.name) + (metadata ? '<small>' + e(metadata) + '</small>' : '') + '</td></tr>' +
+            '<tr class="receipt-values"><td>' + e(p.unit) + '</td><td class="numeric">' + e(p.qty) + '</td><td class="numeric">' + (mrp(p) === null ? '—' : e(amount(mrp(p)))) + '</td><td class="numeric">' + e(amount(p.price)) + '</td><td class="numeric receipt-tax">—</td><td class="numeric">' + e(amount(p.price * p.qty)) + '</td></tr>' +
+            (reduction ? '<tr><td colspan="6" class="receipt-item-discount">Discount ' + e(rupees(reduction)) + ' × ' + e(p.qty) + ' = ' + e(rupees(reduction * p.qty)) + '</td></tr>' : '') + '</tbody>';
+    }).join('');
     return '<article class="receipt-document"><header><h1>' + e(settings.name) + '</h1>' +
         (settings.address ? '<p class="receipt-address">' + e(settings.address) + '</p>' : '') +
-        (settings.phone ? '<p>' + e(settings.phone) + '</p>' : '') +
-        '<h2>SALES RECEIPT</h2></header><dl class="receipt-meta"><dt>Receipt</dt><dd>' + e(sale.id) + '</dd><dt>Date</dt><dd>' + e(new Date(sale.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })) + ' IST</dd><dt>Customer</dt><dd>' + e(sale.customer) + '</dd><dt>Payment</dt><dd>' + e(sale.payment) + '</dd></dl>' +
+        (settings.phone ? '<p>Phone: ' + e(settings.phone) + '</p>' : '') +
+        '<h2>BILL RECEIPT</h2></header><section class="receipt-meta"><p><b>Bill No:</b> ' + e(sale.id) + '</p><p><b>Date:</b> ' + e(new Date(sale.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })) + '</p>' +
+        (sale.customer ? '<p><b>Customer:</b> ' + e(sale.customer) + '</p>' : '') + '</section>' +
         (demo ? '<p class="receipt-demo">DEMO — NOT A REAL TRANSACTION</p>' : '') +
-        '<p class="receipt-currency">All amounts in INR</p><table class="receipt-lines"><colgroup><col style="width:44%"><col style="width:26%"><col style="width:30%"></colgroup><thead><tr><th>Item / Qty</th><th class="numeric">Rate</th><th class="numeric">Amount</th></tr></thead>' +
-        sale.items.map((p, i) => { const reduction = sale.productDiscount !== undefined ? productDiscount(p) : 0; return '<tbody class="receipt-item"><tr><td colspan="3" class="receipt-name">' + e(i + 1) + '. ' + e(p.name) + '</td></tr><tr><td>' + e(p.qty) + ' × ' + e(p.unit) + '</td><td class="numeric">' + e(amount(p.price)) + '</td><td class="numeric">' + e(amount(p.price * p.qty)) + '</td></tr><tr><td colspan="3" class="receipt-item-detail">MRP: ' + (mrp(p) === null ? 'not recorded' : e(amount(mrp(p))) + ' / ' + e(p.unit)) + ' · Discount: ' + e(amount(reduction)) + ' / ' + e(p.unit) + '</td></tr></tbody>'; }).join('') +
-        '</table><section class="receipt-totals">' + row('MRP total', mrpTotal) + (hasAllMrp ? '' : '<p class="receipt-mrp-note">* Missing MRP uses selling price in this total.</p>') + row('Selling price subtotal', subtotal) +
-        (sale.productDiscount !== undefined ? row('Product discount', -sale.productDiscount) + row('Bill discount', -(sale.billDiscount ?? sale.discount - sale.productDiscount)) : row('Discount', -sale.discount)) +
-        row('TOTAL PAID', sale.total, 'receipt-grand') + row('Customer saved' + (hasAllMrp ? ' vs MRP' : ' (known MRP)'), saved, 'receipt-savings') + '</section><footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
+        '<table class="receipt-lines"><colgroup><col class="receipt-product-col"><col class="receipt-qty-col"><col class="receipt-mrp-col"><col class="receipt-rate-col"><col class="receipt-tax-col"><col class="receipt-total-col"></colgroup><thead><tr><th>Product</th><th class="numeric">Qty</th><th class="numeric">MRP</th><th class="numeric">Rate</th><th class="numeric receipt-tax">Tax</th><th class="numeric">Total</th></tr></thead>' + lines + '</table>' +
+        '<section class="receipt-totals">' + row('SUM', rupees(subtotal), 'receipt-sum') + row('Total Qty', String(totalQty)) + row('MRP total' + (allMrp ? '' : ' *'), rupees(mrpTotal)) +
+        (sale.productDiscount !== undefined ? row('Product discount', '− ' + rupees(productDiscountTotal)) + row('Bill discount', '− ' + rupees(billDiscount)) : row('Discount', '− ' + rupees(discount))) +
+        row('Round off', rupees(0)) + row('Total Amount', rupees(sale.total), 'receipt-grand') + row('Customer saved' + (allMrp ? ' vs MRP' : ' (known MRP)'), rupees(saved), 'receipt-savings') +
+        (allMrp ? '' : '<p class="receipt-mrp-note">* Missing MRP uses selling price in the MRP total. Savings include recorded MRP and discounts only.</p>') + '</section>' +
+        '<section class="receipt-payment"><div class="receipt-payment-heading"><b>Pay Mode Received</b><b>Amount</b></div>' + row(sale.payment, rupees(sale.total)) + '</section>' +
+        '<section class="receipt-tax-note"><b>Tax details</b><p>GST not recorded for this sale.</p></section>' +
+        '<footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
 }
 export function receiptCSS(paper) {
     const width = paper === '58' ? '48mm' : paper === '80' ? '72mm' : '186mm';
     return `
  *{box-sizing:border-box}
  html,body{margin:0;padding:0;background:#fff!important;color:#000!important;color-scheme:light}
- .receipt-document{width:${width};max-width:100%;margin:0 auto;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:${paper === '58' ? '10' : '12'}px;line-height:1.4;font-variant-numeric:tabular-nums;color:#000!important;background:#fff!important}
+ .receipt-document{width:${width};max-width:100%;margin:0 auto;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:${paper === '58' ? '9' : '11'}px;line-height:1.35;font-variant-numeric:tabular-nums;color:#000!important;background:#fff!important}
  .receipt-document *{color:#000!important;background:transparent!important;box-shadow:none!important;text-shadow:none!important}
- .receipt-document header{text-align:center;border-bottom:1px dashed #000;padding-bottom:10px;margin-bottom:10px}
- .receipt-document h1{font-size:${paper === '58' ? '15' : '19'}px;line-height:1.25;margin:0 0 6px;font-weight:700;letter-spacing:0;overflow-wrap:anywhere}
- .receipt-document h2{font-size:12px;margin:9px 0 0;letter-spacing:1px}
- .receipt-document p{margin:4px 0;overflow-wrap:anywhere}
+ .receipt-document header{text-align:center;border-top:1px solid #000;border-bottom:1px solid #000;padding:5px 0;margin-bottom:5px}
+ .receipt-document h1{font-size:${paper === '58' ? '13' : '17'}px;line-height:1.2;margin:2px 0 4px;font-weight:700;overflow-wrap:anywhere}
+ .receipt-document h2{font-size:${paper === '58' ? '10' : '12'}px;letter-spacing:.03em;margin:5px 0 1px}
+ .receipt-document p{margin:3px 0;overflow-wrap:anywhere}
  .receipt-address{white-space:pre-line}
- .receipt-meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;margin:0 0 8px}
- .receipt-meta dt{font-weight:700}.receipt-meta dd{margin:0;text-align:right;overflow-wrap:anywhere;min-width:0}
- .receipt-currency{text-align:right;font-size:9px}
+ .receipt-meta{margin:0 0 5px;overflow-wrap:anywhere}
+ .receipt-meta p{margin:2px 0}
  .receipt-lines{font:inherit;width:100%;border-collapse:collapse;table-layout:fixed}
- .receipt-lines th{padding:5px 2px;text-align:left;border-top:1px solid #000;border-bottom:1px solid #000;font-weight:700}
- .receipt-lines td{padding:2px;vertical-align:top;overflow-wrap:anywhere}
- .receipt-lines .numeric{text-align:right}
- .receipt-lines .receipt-name{padding-top:7px;font-weight:700}
- .receipt-item-detail{font-size:${paper === '58' ? '9' : '11'}px;font-weight:600;padding-bottom:6px!important}
- .receipt-mrp-note{font-size:9px;line-height:1.2;margin:1px 0 7px!important}
+ .receipt-product-col{width:21%}.receipt-qty-col{width:9%}.receipt-mrp-col{width:17%}.receipt-rate-col{width:17%}.receipt-tax-col{width:11%}.receipt-total-col{width:25%}
+ .receipt-lines th{padding:4px 1px;text-align:left;border-top:1px solid #000;border-bottom:1px solid #000;font-weight:700}
+ .receipt-lines td{padding:2px 1px;vertical-align:top;overflow-wrap:anywhere}
+ .receipt-lines .numeric{text-align:right;white-space:nowrap}
+ .receipt-item-title td{padding-top:6px;font-weight:700;overflow-wrap:anywhere}
+ .receipt-item-title small{display:block;font-size:9px;font-weight:400}
+ .receipt-values td{padding-bottom:5px;border-bottom:1px solid #aaa}
+ .receipt-item-discount{text-align:right;font-size:9px;padding:2px!important}
  .receipt-item{break-inside:avoid;page-break-inside:avoid}
  .receipt-lines thead{display:table-header-group}
- .receipt-totals{margin-top:10px;border-top:1px dashed #000;padding-top:6px;break-inside:avoid;page-break-inside:avoid}
- .receipt-summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:10px;margin:5px 0}
- .receipt-summary strong{text-align:right;overflow-wrap:anywhere}
- .receipt-grand{border-top:1px solid #000;padding-top:7px;margin-top:7px;font-size:${paper === '58' ? '12' : '15'}px;font-weight:700}
- .receipt-savings{border-top:1px dashed #000;padding-top:5px;font-weight:700}
- .receipt-document footer{text-align:center;margin-top:12px;border-top:1px dashed #000;padding-top:8px;break-inside:avoid}
+ .receipt-totals{margin-top:4px;break-inside:avoid;page-break-inside:avoid}
+ .receipt-summary{display:flex;justify-content:space-between;align-items:baseline;gap:5px;margin:3px 0}
+ .receipt-summary span{min-width:0;overflow-wrap:anywhere}.receipt-summary strong{text-align:right;white-space:nowrap}
+ .receipt-sum,.receipt-grand{border-top:1px solid #000;padding-top:4px;font-weight:700}
+ .receipt-grand{border-bottom:1px solid #000;padding-bottom:4px;font-size:${paper === '58' ? '11' : '13'}px}
+ .receipt-savings{font-weight:700}
+ .receipt-mrp-note{font-size:9px;line-height:1.25;margin-top:6px!important}
+ .receipt-payment,.receipt-tax-note{border-top:1px solid #000;margin-top:8px;padding-top:4px;break-inside:avoid}
+ .receipt-payment-heading{display:flex;justify-content:space-between}
+ .receipt-document footer{text-align:center;margin-top:10px;border-top:1px solid #000;padding-top:6px;break-inside:avoid}
  .receipt-demo{text-align:center;font-weight:700}
+ ${paper === '58' ? '.receipt-tax{display:none}.receipt-product-col{width:23%}.receipt-qty-col{width:10%}.receipt-mrp-col{width:19%}.receipt-rate-col{width:20%}.receipt-tax-col{width:0}.receipt-total-col{width:28%}' : ''}
  @page{size:${paper === 'A4' ? 'A4' : 'auto'};margin:${paper === '58' ? '5mm' : paper === '80' ? '4mm' : '12mm'}}
  @media print{html,body{width:auto!important;min-height:0!important;overflow:visible!important}.receipt-document{margin:0 auto}}
  `;
