@@ -87,6 +87,12 @@ async function sellerData(db, id) {
       `SELECT v.id,v.data,v.business_type,v.suspended,CASE WHEN a.vendor_id IS NULL THEN FALSE ELSE TRUE END AS selected FROM vendors v LEFT JOIN wholesale_vendor_access a ON a.vendor_id=v.id AND a.wholesaler_id=? WHERE v.business_type=(SELECT business_category FROM wholesalers WHERE user_id=?) ORDER BY v.created_at,v.id`,
     )
     .all(id, id);
+  const offlineVendors = await db.prepare(
+    `SELECT v.*,COALESCE(SUM(CASE WHEN l.kind='sale' THEN l.amount WHEN l.kind='payment' THEN -l.amount ELSE l.amount END),0) AS balance FROM wholesale_offline_vendors v LEFT JOIN wholesale_offline_vendor_ledger l ON l.vendor_id=v.id WHERE v.wholesaler_id=? GROUP BY v.id ORDER BY v.name`,
+  ).all(id);
+  const offlineLedger = await db.prepare(
+    `SELECT l.* FROM wholesale_offline_vendor_ledger l WHERE l.wholesaler_id=? ORDER BY l.created_at DESC,l.id DESC`,
+  ).all(id);
   const pricing = await wholesalePricing(db),
     subscription = await wholesaleSubscriptionInfo(db, profile, pricing);
   return {
@@ -112,6 +118,8 @@ async function sellerData(db, id) {
       selected: v.selected === true || v.selected === 1,
       suspended: v.suspended,
     })),
+    offlineVendors,
+    offlineLedger,
   };
 }
 
@@ -170,6 +178,8 @@ export function registerWholesaleRoutes(app, db) {
     if (req.user.role === "wholesale" && req.method !== "GET") {
       const needed = path.includes("/products")
         ? "inventory"
+        : path.includes("/offline-vendors")
+          ? "customers"
         : path.includes("/access")
           ? "customers"
           : path.includes("/returns") || path.includes("/refunds")
@@ -221,7 +231,8 @@ export function registerWholesaleRoutes(app, db) {
               : wholesalerId
                 ? "wholesale"
                 : "vendor",
-          category: "wholesale",
+          category: path.includes("/returns") || path.includes("/refunds") ? "return" :
+            path.includes("/transactions") ? "payment" : path.includes("/requests") ? "order" : "wholesale",
           title: names,
         }).then(
           () => json(body),
@@ -323,7 +334,37 @@ export function registerWholesaleRoutes(app, db) {
     }
     if (!access.some((x) => ["customers", "payments"].includes(x)))
       data.vendors = [];
+    if (!access.some((x) => ["customers", "payments"].includes(x))) {
+      data.offlineVendors = [];
+      data.offlineLedger = [];
+    }
     res.json({ ...data, permissions: access });
+  });
+  app.post("/api/wholesale/offline-vendors", async (req, res) => {
+    seller(req.user);
+    const v = req.body;
+    const name = text(v.name, 160);
+    if (!name || ["contactName", "phone", "address", "notes"].some((key) => typeof v[key] !== "string") ||
+        v.contactName.length > 160 || v.phone.length > 40 || v.address.length > 400 || v.notes.length > 500)
+      throw bad("Enter a business name and valid contact details.");
+    const id = v.id || randomUUID(), now = Date.now();
+    if (v.id && !await db.prepare("SELECT id FROM wholesale_offline_vendors WHERE id=? AND wholesaler_id=?").get(id, req.wholesalerId))
+      throw bad("Offline vendor not found.", 404);
+    await db.prepare(`INSERT INTO wholesale_offline_vendors(id,wholesaler_id,name,contact_name,phone,address,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,contact_name=EXCLUDED.contact_name,phone=EXCLUDED.phone,address=EXCLUDED.address,notes=EXCLUDED.notes,updated_at=EXCLUDED.updated_at WHERE wholesale_offline_vendors.wholesaler_id=EXCLUDED.wholesaler_id`)
+      .run(id, req.wholesalerId, name, v.contactName.trim(), v.phone.trim(), v.address.trim(), v.notes.trim(), now, now);
+    res.json({ ok: true, savedVendorId: id });
+  });
+  app.post("/api/wholesale/offline-vendors/:id/ledger", async (req, res) => {
+    seller(req.user);
+    requireEmployeePermission(req.user, "payments");
+    const vendor = await db.prepare("SELECT id FROM wholesale_offline_vendors WHERE id=? AND wholesaler_id=?").get(req.params.id, req.wholesalerId);
+    if (!vendor) throw bad("Offline vendor not found.", 404);
+    const { kind, amount: value, note } = req.body;
+    if (!["sale", "payment", "refund"].includes(kind) || !money(value) || typeof note !== "string" || note.length > 300)
+      throw bad("Enter a valid sale, payment or refund and amount.");
+    await db.prepare("INSERT INTO wholesale_offline_vendor_ledger(id,wholesaler_id,vendor_id,kind,amount,note,created_at) VALUES(?,?,?,?,?,?,?)")
+      .run(randomUUID(), req.wholesalerId, vendor.id, kind, value, note.trim(), Date.now());
+    res.json({ ok: true });
   });
   app.post("/api/wholesale/profile", async (req, res) => {
     seller(req.user);
