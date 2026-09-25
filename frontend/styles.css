@@ -7158,6 +7158,36 @@ body.printing-invoice .invoice-sheet td {
   }
 }
 
+/* Subscription, wholesale requests and compact mobile ledgers */
+.renew-urgent { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; flex-basis: 100%; color: #9f2929; font-size: 15px; line-height: 1.4; }
+.dark .renew-urgent { color: #ffaaa6; }
+.request-view-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.wholesale-request-tiles { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,350px),1fr)); gap: 16px; align-items: start; }
+.wholesale-request-tiles .order-card { min-width: 0; height: 100%; overflow-wrap: anywhere; }
+.wholesale-request-tiles .order-card .actions { display: flex; flex-wrap: wrap; }
+.wholesale-low-stock { text-align: left; color: var(--foreground); cursor: pointer; border: 1px solid var(--border); }
+.wholesale-low-stock:hover { border-color: var(--primary); }
+.offline-vendors { margin-top: 18px; }
+.offline-vendor-grid { display: grid; grid-template-columns: minmax(210px,.7fr) minmax(0,1.3fr); gap: 20px; }
+.offline-vendor-list,.offline-vendor-details,.offline-entry-list { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.offline-vendor { width: 100%; padding: 12px; display: grid; gap: 5px; text-align: left; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.offline-vendor.active { border-color: var(--primary); background: var(--accent); }
+.offline-vendor small { color: var(--muted-foreground); }
+.offline-ledger { border-top: 1px solid var(--border); padding-top: 16px; }
+.offline-entry-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; align-items: end; }
+.offline-entry-form label { display: grid; gap: 6px; min-width: 0; }
+.offline-entry-form input,.offline-entry-form select { width: 100%; min-width: 0; }
+.offline-entry-list .record-row { min-width: 0; overflow-wrap: anywhere; }
+.invoice-sheet .ledger-table { table-layout: fixed; width: 100%; }
+.invoice-sheet .ledger-table th,.invoice-sheet .ledger-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; padding: 8px 7px; }
+.invoice-sheet .ledger-table th:first-child,.invoice-sheet .ledger-table td:first-child { width: 45px; }
+.invoice-sheet .ledger-table th:nth-last-child(3),.invoice-sheet .ledger-table td:nth-last-child(3),.invoice-sheet .ledger-table th:last-child,.invoice-sheet .ledger-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.invoice-sheet .invoice-parties b,.invoice-sheet > header h2 { overflow-wrap: anywhere; }
+.invoice-sheet .invoice-totals > div { align-items: baseline; }
+.invoice-sheet .invoice-totals b { text-align: right; font-variant-numeric: tabular-nums; }
+@media(max-width:700px){.offline-vendor-grid { grid-template-columns: 1fr; }.offline-entry-form { grid-template-columns: 1fr; }.request-view-tabs .btn { flex: 1 1 180px; }.invoice-sheet .table-scroll { overflow-x: auto; }.invoice-sheet .ledger-table { min-width: 610px; }}
+@media print { body.printing-invoice .invoice-sheet .ledger-table { min-width: 0 !important; table-layout: fixed !important; font-size: 10pt; } body.printing-invoice .invoice-sheet .table-scroll { overflow: visible !important; } body.printing-invoice .invoice-sheet .invoice-parties { grid-template-columns: 1fr 1fr; } body.printing-invoice .invoice-sheet tr { break-inside: avoid; } }
+
 /* Final responsive overrides: keep branded headers and both themes stable. */
 .wholesale-header > .wholesale-identity {
   display: grid;
