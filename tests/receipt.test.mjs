@@ -14,3 +14,10 @@ test('Receipt layouts use printable widths without fixed-position content',()=>{
  }
  assert(receiptCSS('58').includes('48mm'));assert(receiptCSS('80').includes('72mm'));assert(receiptCSS('A4').includes('186mm'));
 });
+test('MRP and discount savings use the saved sale snapshot without double counting',()=>{
+ const html=receiptMarkup({...sale,items:[{...sale.items[0],mrp:150}]},{name:'Shop',address:'',phone:''});
+ assert(html.includes('MRP 150.00'));assert(html.includes('MRP total'));assert(html.includes('300.00'));
+ assert(html.includes('You saved vs MRP'));assert(html.includes('85.00'));
+ const previous=receiptMarkup(sale,{name:'Shop',address:'',phone:''});
+ assert(previous.includes('You saved'));assert(!previous.includes('MRP total'));
+});
