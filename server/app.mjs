@@ -7,6 +7,7 @@ import { wholesalePricing } from "./wholesale-subscriptions.mjs";
 import { registerMarketplaceRoutes } from "./marketplace.mjs";
 import { registerEmployeeRoutes } from "./employees.mjs";
 import { registerBusinessRoutes } from "./businesses.mjs";
+import { registerAdminSubscriptionRoutes } from "./admin-subscriptions.mjs";
 import { sendResetEmail } from "./reset-email.mjs";
 import {
   pricing,
@@ -245,6 +246,7 @@ export function createApp(
   registerActivityRoutes(app, db);
   registerEmployeeRoutes(app, db);
   registerBusinessRoutes(app, db);
+  registerAdminSubscriptionRoutes(app, db);
   app.get("/api/auth/me", (req, res) =>
     res.json({
       user: {
