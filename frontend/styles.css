@@ -7254,6 +7254,14 @@ body.printing-invoice .invoice-sheet td {
 .admin-business-list { display:grid; gap:8px; margin-top:14px; }
 .admin-business-row { display:flex; align-items:center; justify-content:space-between; text-align:left; gap:16px; width:100%; padding:13px 16px; color:inherit; background:var(--card); border:1px solid var(--border); border-radius:12px; cursor:pointer; }
 .admin-business-row:hover,.admin-business-row:focus-visible { outline:2px solid var(--primary); }
+.admin-subscription-dashboard,.admin-subscription-history { display:grid; gap:16px; min-width:0; }
+.admin-revenue-metrics { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+.admin-subscription-search { max-width:420px; }
+.admin-subscription-row,.admin-history-row { flex-wrap:wrap; cursor:default; }
+.admin-subscription-row { cursor:pointer; }
+.admin-subscription-row > span:first-child,.admin-history-row > span:first-child { flex:1 1 260px; }
+.admin-history-filters { display:grid; grid-template-columns:minmax(0,2fr) minmax(150px,1fr); gap:12px; margin-bottom:16px; }
+@media(max-width:600px){.admin-history-filters{grid-template-columns:1fr}.admin-revenue-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-subscription-row,.admin-history-row{align-items:flex-start}}
 .admin-business-row > span:first-child { display:grid; min-width:0; gap:4px; }
 .admin-business-row small { color:var(--muted-foreground); overflow-wrap:anywhere; }
 .admin-create-form,.expense-editor,.archive-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; align-items:end; }
