@@ -273,6 +273,7 @@ export default function Home() {
     [period, setPeriod] = useState("Last 7 days"),
     [camera, setCamera] = useState(false),
     [cameraPurpose, setCameraPurpose] = useState<"sale" | "inventory" | "product">("sale"),
+    [multiSaleScan, setMultiSaleScan] = useState(false),
     [batchNotice, setBatchNotice] = useState(""),
     [historyExpanded, setHistoryExpanded] = useState(false);
   const [version, setVersion] = useState(0),
@@ -1520,15 +1521,8 @@ export default function Home() {
                       value={barcode}
                       onChange={(e) => setBarcode(e.target.value)}
                     />
-                    <button
-                      className="icon-button"
-                      type="button"
-                      aria-label="Scan multiple barcodes with camera"
-                      title="Scan multiple barcodes"
-                      onClick={() => {setCameraPurpose("sale");setCamera(true)}}
-                    >
-                      <Camera size={19} />
-                    </button>
+                    <button className="btn" type="button" onClick={() => {setMultiSaleScan(false);setCameraPurpose("sale");setCamera(true)}}><Camera size={18}/> Scan product</button>
+                    <button className="btn" type="button" onClick={() => {setMultiSaleScan(true);setCameraPurpose("sale");setCamera(true)}}><ScanBarcode size={18}/> Multi-scan</button>
                   </form>
                 )}
                 {posMode === "Product name" && (
@@ -2143,7 +2137,7 @@ export default function Home() {
             </section>
           )}
           {view === "Subscription approvals" && isAdmin && (
-            <SubscriptionApprovals />
+            <SubscriptionApprovals kind="vendor" />
           )}
           {view === "Vendor access" &&
             isAdmin &&
@@ -2691,7 +2685,7 @@ export default function Home() {
         open={camera}
         onClose={() => setCamera(false)}
         onScan={cameraPurpose === "product" ? scanProductForm : scanCode}
-        multi={cameraPurpose === "sale"}
+        multi={cameraPurpose === "sale" && multiSaleScan}
         onScanMany={scanBatch}
         batchActionLabel="Review bill and complete sale"
         describeCode={(raw) => {
