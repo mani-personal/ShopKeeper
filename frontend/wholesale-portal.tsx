@@ -70,6 +70,7 @@ export function WholesalePortal() {
     [editing, setEditing] = useState<any>(),
     [lowStockOnly, setLowStockOnly] = useState(false),
     [scanner, setScanner] = useState(false),
+    [productPhotoMode,setProductPhotoMode] = useState(false),
     [packingOrder, setPackingOrder] = useState<any>(),
     [scanCode, setScanCode] = useState("");
   async function load() {
@@ -83,6 +84,7 @@ export function WholesalePortal() {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(()=>{if(!editing)setProductPhotoMode(false)},[editing]);
   useEffect(() => {
     if (data?.permissions && tab === "Overview" && !data.permissions.includes("dashboard"))
       setTab(["Requests", "Products", "Vendors", "Transactions", "Expenses", "Employees", "Account", "Settings", "Subscription", "Support"]
@@ -112,6 +114,7 @@ export function WholesalePortal() {
       await load();
       setMessage("Catalogue product saved.");
       setEditing(undefined);
+      setProductPhotoMode(false);
     } catch (e) {
       setMessage((e as Error).message);
     }
@@ -390,10 +393,11 @@ export function WholesalePortal() {
                 onClick={() => setScanner(true)}
               >
                 <ScanBarcode size={17} />
-                Scan barcode
+                Scan product
               </button>
             </div>
-            <ProductLabel
+            <div className="product-capture-actions"><button type="button" className="btn" aria-expanded={productPhotoMode} onClick={()=>setProductPhotoMode(mode=>!mode)}><Upload size={16}/>{productPhotoMode?'Hide photo options':'Read label from photo (optional)'}</button></div>
+            {productPhotoMode&&<ProductLabel
               apply={(draft) =>
                 setEditing((p: any) => ({
                   ...p,
@@ -402,7 +406,7 @@ export function WholesalePortal() {
                   ...(draft.mrp !== undefined ? { mrp: draft.mrp } : {}),
                 }))
               }
-            />
+            />}
             <form
               key={[editing.id, editing.sku, editing.name, editing.mrp].join(
                 "|",
