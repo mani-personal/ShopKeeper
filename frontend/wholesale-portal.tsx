@@ -1961,6 +1961,7 @@ function WholesaleSubscription({
           </form>
         </section>
       )}
+      <section className="panel padded"><h2>Request a subscription extension</h2><p>Request extra days from the administrator. Access changes only after approval.</p><form className="form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);try{await api('/api/wholesale/subscriptions/extension-request',{days:Number(f.get('days')),reason:f.get('reason')});form.reset();setMessage('Extension request sent for review.');await reload()}catch(error){setMessage((error as Error).message)}}}><label>Days requested<input name="days" type="number" min="1" max="3650" required/></label><label>Reason<input name="reason" maxLength={100} required/></label><button className="btn">Send request</button></form></section>
       <section className="panel table-scroll">
         <h2>Subscription history</h2>
         <table className="ledger-table">
