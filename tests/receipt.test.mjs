@@ -17,7 +17,9 @@ test('Receipt layouts use printable widths without fixed-position content',()=>{
 test('MRP and discount savings use the saved sale snapshot without double counting',()=>{
  const html=receiptMarkup({...sale,items:[{...sale.items[0],mrp:150}]},{name:'Shop',address:'',phone:''});
  assert(html.includes('MRP 150.00'));assert(html.includes('MRP total'));assert(html.includes('300.00'));
- assert(html.includes('You saved vs MRP'));assert(html.includes('85.00'));
+ assert(html.includes('Customer saved vs MRP'));assert(html.includes('85.00'));
  const previous=receiptMarkup(sale,{name:'Shop',address:'',phone:''});
- assert(previous.includes('You saved'));assert(!previous.includes('MRP total'));
+ assert(previous.includes('Customer saved'));assert(!previous.includes('MRP total'));
+ const discounted=receiptMarkup({...sale,items:[{...sale.items[0],mrp:150,cost:90,discountMode:'custom',customDiscount:10}]},{name:'Shop',address:'',phone:''});
+ assert(discounted.includes('Product discount 10.00 / piece'));
 });
