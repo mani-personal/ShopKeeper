@@ -1,5 +1,6 @@
 import { usePageRoute } from "./routes";
 import { AdminManagement } from "./admin-management";
+import { AccountPassword } from "./account-password";
 import { StoreLogo } from "./store-assets";
 ("use client");
 import { useState, useEffect, useRef } from "react";
@@ -801,10 +802,7 @@ export default function Home() {
           <Store size={36} />
           <h1>Welcome to Shopkeeper</h1>
           <p>
-            {error ||
-              "Signed in as " +
-                email +
-                ". Enter the access code from your store administrator."}
+            {error || "Signed in as " + email + ". Your account is not assigned to a store."}
           </p>
           {error ? (
             <>
@@ -816,25 +814,7 @@ export default function Home() {
               </button>
             </>
           ) : (
-            <form
-              className="form"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                if (await act({ type: "claim_access", code: f.get("code") })) {
-                  setError("");
-                  go("Dashboard");
-                }
-              }}
-            >
-              <label>
-                Store access code
-                <input name="code" required autoComplete="off" />
-              </label>
-              <button className="btn primary" disabled={busy}>
-                Activate my store
-              </button>
-            </form>
+            <p>Your account has no assigned store. Contact the platform administrator.</p>
           )}
           <button className="text-button" onClick={logout}>
             Use another account
@@ -2345,84 +2325,7 @@ export default function Home() {
               />
             </>
           )}
-          {view === "Account" && (
-            <section className="panel settings">
-              <div className="panel-heading">
-                <div>
-                  <h2>My account</h2>
-                  <p>{email}</p>
-                </div>
-              </div>
-              <form
-                className="form"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const form = e.currentTarget;
-                  const f = new FormData(form);
-                  try {
-                    await api("/api/auth/password", {
-                      currentPassword: f.get("current"),
-                      password: f.get("password"),
-                    });
-                    form.reset();
-                    toast.success(
-                      "Password changed. Other sessions signed out.",
-                    );
-                  } catch (e) {
-                    toast.error((e as Error).message);
-                  }
-                }}
-              >
-                <label>
-                  Current password
-                  <PasswordInput
-                    name="current"
-                    autoComplete="current-password"
-                    required
-                  />
-                </label>
-                <label>
-                  New password
-                  <PasswordInput
-                    name="password"
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    required
-                  />
-                </label>
-                <button className="btn primary">Change password</button>
-              </form>
-              <form
-                className="form"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  if (cart.length) {
-                    toast.error("Complete or clear your current bill first.");
-                    return;
-                  }
-                  if (
-                    await act({ type: "claim_access", code: f.get("code") })
-                  ) {
-                    go("Dashboard");
-                    toast.success("Additional store activated");
-                  }
-                }}
-              >
-                <label>
-                  Activate another assigned store
-                  <input
-                    name="code"
-                    required
-                    autoComplete="off"
-                    placeholder="One-time activation code"
-                  />
-                </label>
-                <button className="btn">Redeem code</button>
-              </form>
-            </section>
-          )}
+          {view === "Account" && <AccountPassword />}
           <footer className="page-footer">
             <span>
               shopkeeper.{" "}
