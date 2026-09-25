@@ -256,17 +256,31 @@ export function registerSubscriptionRoutes(app, db) {
   });
   app.post("/api/subscriptions/:id/approve", async (req, res) => {
     requireOwner(req.user, "subscriptions");
+    await transaction(db,async()=>{
     const row = await db
       .prepare("SELECT vendor_id FROM subscription_history WHERE id=? AND kind='payment'")
       .get(req.params.id);
     if (!row) throw bad("Payment request not found.",404);
     const vendor = await db
-      .prepare("SELECT * FROM vendors WHERE id=?")
+      .prepare("SELECT * FROM vendors WHERE id=? FOR UPDATE")
       .get(row.vendor_id);
     await subscriptionAction(db, req.user, vendor, {
       type: "subscription_approve",
       id: req.params.id,
     });
+    });
     res.json({ ok: true });
+  });
+  app.post("/api/subscriptions/:id/reject",async(req,res)=>{
+    requireOwner(req.user,"subscriptions");
+    const reason=String(req.body.reason||"").trim();
+    if(!reason||reason.length>150) throw bad("Enter a rejection reason (up to 150 characters).");
+    await transaction(db,async()=>{
+      const row=await db.prepare("SELECT vendor_id FROM subscription_history WHERE id=? AND kind='payment' AND status='pending' FOR UPDATE").get(req.params.id);
+      if(!row) throw bad("Pending vendor subscription not found.",404);
+      await db.prepare("UPDATE subscription_history SET status='rejected',approved_at=?,actor=? WHERE id=?").run(Date.now(),req.user.id,req.params.id);
+      await recordActivity(db,{actorId:req.user.id,vendorId:row.vendor_id,scope:"vendor",category:"subscription",title:"Subscription payment declined",detail:reason,route:"Pricing"});
+    });
+    res.json({ok:true});
   });
 }
