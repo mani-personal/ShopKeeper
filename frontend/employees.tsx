@@ -165,6 +165,7 @@ export function Employees({
                 </small>
               </div>
               <div className="actions">
+                <EmployeeProfileEditor row={row} vendorId={vendorId} disabled={busy} saved={(employees) => {setRows(employees);onMessage?.("Employee details updated. They must sign in again.");}} failed={setError}/>
                 <EmployeeAccessEditor
                   row={row}
                   vendorId={vendorId}
@@ -180,7 +181,7 @@ export function Employees({
                   className="text-button danger"
                   disabled={busy}
                   onClick={async () => {
-                    if (!confirm("Remove access for " + row.name + "?")) return;
+                    if (!confirm("Delete employee " + row.name + "? Their access will be revoked and they will be signed out. Business records remain available.")) return;
                     setBusy(true);
                     try {
                       const result = await api(
@@ -196,7 +197,7 @@ export function Employees({
                   }}
                 >
                   <Trash2 size={15} />
-                  Remove
+                  Delete
                 </button>
               </div>
             </article>
@@ -208,6 +209,19 @@ export function Employees({
       </section>
     </div>
   );
+}
+
+function EmployeeProfileEditor({row,vendorId,disabled,saved,failed}:{row:any;vendorId?:string;disabled:boolean;saved:(rows:any[])=>void;failed:(message:string)=>void}) {
+  const [open,setOpen]=useState(false),[displayName,setDisplayName]=useState(row.name),[mail,setMail]=useState(row.email),[saving,setSaving]=useState(false);
+  useEffect(()=>{setDisplayName(row.name);setMail(row.email)},[row.name,row.email]);
+  return <details className="employee-profile-editor" open={open} onToggle={e=>setOpen(e.currentTarget.open)}>
+    <summary className="text-button">Edit details</summary>
+    <form className="form employee-profile-form" onSubmit={async e=>{e.preventDefault();setSaving(true);try{const result=await api('/api/employees/'+row.id+'/profile',{vendorId,name:displayName,email:mail});saved(result.employees);failed('');setOpen(false)}catch(error){failed((error as Error).message)}finally{setSaving(false)}}}>
+      <label>Name<input value={displayName} maxLength={100} required onChange={e=>setDisplayName(e.target.value)} /></label>
+      <label>Login email<input type="email" value={mail} required onChange={e=>setMail(e.target.value)} /></label>
+      <button className="btn primary" disabled={disabled||saving}>Save details</button>
+    </form>
+  </details>;
 }
 
 function EmployeeAccessEditor({
