@@ -310,6 +310,8 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
   const [posMode, setPosMode] = useState("Barcode");
+  const [returnToPurchase, setReturnToPurchase] = useState(false);
+  const [purchaseProductId, setPurchaseProductId] = useState("");
   const [pricing, setPricing] = useState<PricingConfig>(),
     [subscription, setSubscription] = useState<Subscription>();
   const saleLocked =
@@ -1514,12 +1516,13 @@ export default function Home() {
                   <h2>Sell by barcode or product name</h2>
                   <span className="badge green">{s.products.length} items</span>
                 </div>
-                <Choice
-                  label="Find product by"
-                  value={posMode}
-                  onChange={setPosMode}
-                  options={["Barcode", "Product name"]}
-                />
+                <div className="pos-search-row">
+                  <Choice
+                    label="Find product by"
+                    value={posMode}
+                    onChange={setPosMode}
+                    options={["Barcode", "Product name"]}
+                  />
                 {posMode === "Barcode" && (
                   <form
                     className="scan-strip"
@@ -1549,7 +1552,7 @@ export default function Home() {
                   </form>
                 )}
                 {posMode === "Product name" && (
-                  <div className="toolbar">
+                  <div className="pos-name-search">
                     <div className="search">
                       <Search size={18} />
                       <input
@@ -1561,6 +1564,7 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+                </div>
                 <div className="product-grid">
                   {posProducts.map((p) => (
                     <button
@@ -1838,16 +1842,13 @@ export default function Home() {
                 </div>
                 <button
                   className="btn primary"
-                  disabled={!s.products.length}
                   onClick={() => setModal("purchase")}
                 >
                   <Plus size={16} />
                   Receive stock
                 </button>
               </div>
-              {!s.products.length && (
-                <div className="notice">Add a product in Inventory first.</div>
-              )}
+              {!s.products.length && <div className="notice">Add a new product from Receive stock to record your first delivery.</div>}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -2483,8 +2484,12 @@ export default function Home() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 const completed = {...product, price: Number.isFinite(product.price) ? product.price : product.mrp};
-                if (await act({ type: "product", product: completed })) {
-                  setModal("");
+                const savedState = await act({ type: "product", product: completed });
+                if (savedState) {
+                  if (returnToPurchase) setPurchaseProductId(savedState.products.find((item: Product) =>
+                    (completed.barcode && item.barcode === completed.barcode) || (!completed.barcode && item.name === completed.name))?.id || "");
+                  setModal(returnToPurchase ? "purchase" : "");
+                  setReturnToPurchase(false);
                   toast.success("Product saved");
                 }
               }}
@@ -2726,6 +2731,9 @@ export default function Home() {
             <PurchaseForm
               s={s}
               busy={busy}
+              preferredProductId={purchaseProductId}
+              addProduct={() => { setProduct({ ...blank }); setReturnToPurchase(true); setModal("product"); }}
+              scanProduct={() => { setProduct({ ...blank }); setReturnToPurchase(true); setModal("product"); setCameraPurpose("product"); setCamera(true); }}
               save={async (a) => {
                 if (await act(a)) {
                   setModal("");
@@ -2797,12 +2805,18 @@ function PurchaseForm({
   s,
   busy,
   save,
+  addProduct,
+  scanProduct,
+  preferredProductId,
 }: {
   s: State;
   busy: boolean;
   save: (a: any) => void;
+  addProduct: () => void;
+  scanProduct: () => void;
+  preferredProductId: string;
 }) {
-  const [id, setId] = useState(s.products[0]?.id || "");
+  const [id, setId] = useState(preferredProductId || s.products[0]?.id || "");
   const operation = useRef(crypto.randomUUID());
   return (
     <form
@@ -2821,6 +2835,11 @@ function PurchaseForm({
         });
       }}
     >
+      <div className="actions purchase-add-actions">
+        <button type="button" className="btn" onClick={addProduct}><Plus size={16} /> New product received</button>
+        <button type="button" className="btn" onClick={scanProduct}><Camera size={16} /> Scan barcode to add / update</button>
+      </div>
+      {!s.products.length && <p className="notice">Create the delivered product first, then return here to record its quantity and payment.</p>}
       <label>
         Product
         <Select value={id} onValueChange={setId}>
