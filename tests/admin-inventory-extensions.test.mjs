@@ -40,5 +40,20 @@ test('admin exports scoped inventory and reviews isolated extension requests wit
   assert.equal((await json('/api/wholesale/subscriptions/extensions/'+wholesalePending.data.requests[0].id+'/review',{action:'approve'},admin)).status,200);
   assert.equal((await call('/api/admin/inventory/export?kind=wholesale',undefined,admin)).status,200);
   const completed=await db.prepare('SELECT valid_until FROM wholesalers WHERE user_id=?').get(createdWholesale.data.id);assert(completed.valid_until>Date.now()+2*86400000);
+  await db.prepare('INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,subcategory,weight,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run('wholesale-item',createdWholesale.data.id,'Farm rice','8902345678912','bag',95,18,true,Date.now(),Date.now(),'Grocery','Rice','1 kg','Premium rice',110,2,10,88,'1006',5);
+  const csv=await call('/api/admin/inventory/export?kind=wholesale',undefined,admin);
+  assert.equal(csv.status,200);for(const value of ['Farm rice','Bulk unit price','HSN / SAC','Premium rice','1006','88','1 kg']) assert(csv.data.includes(value));
+  assert.equal((await call('/api/admin/inventory/export?kind=wholesale',undefined,wholesale)).status,403);
+  const vendorUntil=(await db.prepare('SELECT valid_until FROM vendors WHERE id=?').get(created.data.id)).valid_until;
+  await db.prepare('INSERT INTO subscription_history(id,vendor_id,kind,plan,amount,days,status,created_at,actor) VALUES(?,?,?,?,?,?,?,?,?)').run('without-proof',created.data.id,'payment','monthly',1000,30,'pending',Date.now(),created.data.id);
+  assert.equal((await json('/api/subscriptions/pending',undefined,admin)).data.requests.find(x=>x.id==='without-proof').has_proof,false);
+  assert.equal((await json('/api/subscriptions/without-proof/approve',{},admin)).status,200,'admin may verify independently without a screenshot or reference');
+  assert((await db.prepare('SELECT valid_until FROM vendors WHERE id=?').get(created.data.id)).valid_until>vendorUntil);
+  await db.prepare('INSERT INTO subscription_history(id,vendor_id,kind,plan,amount,days,status,created_at,actor) VALUES(?,?,?,?,?,?,?,?,?)').run('reject-me',created.data.id,'payment','monthly',1000,30,'pending',Date.now(),created.data.id);
+  const beforeReject=(await db.prepare('SELECT valid_until FROM vendors WHERE id=?').get(created.data.id)).valid_until;
+  assert.equal((await json('/api/subscriptions/reject-me/reject',{reason:'Bank transfer not received'},admin)).status,200);
+  assert.equal((await db.prepare('SELECT status FROM subscription_history WHERE id=?').get('reject-me')).status,'rejected');
+  assert.equal((await db.prepare('SELECT valid_until FROM vendors WHERE id=?').get(created.data.id)).valid_until,beforeReject);
+  assert.equal((await json('/api/subscriptions/reject-me/reject',{reason:'Repeat'},admin)).status,404);
  }finally{await new Promise(resolve=>server.close(resolve));await db.close()}
 });
