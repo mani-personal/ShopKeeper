@@ -694,7 +694,7 @@ export function createApp(
         actorId: user.id,
         vendorId: selected ?? null,
         scope: "vendor",
-        category: a.type,
+        category: a.type.startsWith("subscription_") ? "subscription" : a.type,
         title: titles[a.type] || "Store activity",
         detail:
           a.type === "sale" ? "A sale was added to the store records." : "",
