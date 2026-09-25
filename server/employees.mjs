@@ -152,6 +152,8 @@ export function registerEmployeeRoutes(app, db) {
       await db
         .prepare("DELETE FROM sessions WHERE user_id=?")
         .run(req.params.id);
+      await db.prepare("UPDATE users SET disabled=TRUE WHERE id=? AND employee_permissions IS NOT NULL AND NOT EXISTS(SELECT 1 FROM memberships WHERE user_id=?) AND NOT EXISTS(SELECT 1 FROM wholesale_memberships WHERE user_id=?)")
+        .run(req.params.id, req.params.id, req.params.id);
       return res.json({ employees: await wholesaleTeam(db, wholesalerId) });
     }
     requireEmployeePermission(req.user, "employees");
@@ -161,6 +163,40 @@ export function registerEmployeeRoutes(app, db) {
       .run(req.params.id, vendor.id);
     if (!result.changes) throw bad("Employee not found.", 404);
     await db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.params.id);
+    await db.prepare("UPDATE users SET disabled=TRUE WHERE id=? AND employee_permissions IS NOT NULL AND NOT EXISTS(SELECT 1 FROM memberships WHERE user_id=?) AND NOT EXISTS(SELECT 1 FROM wholesale_memberships WHERE user_id=?)")
+      .run(req.params.id, req.params.id, req.params.id);
+    res.json({ employees: await vendorTeam(db, vendor.id) });
+  });
+
+  app.post("/api/employees/:id/profile", async (req, res) => {
+    if (req.params.id === req.user.id) throw bad("Edit your own profile from Account settings.", 409);
+    requireEmployeePermission(req.user, "employees");
+    const displayName = name(req.body.name), mail = email(req.body.email);
+    if (!displayName) throw bad("Enter the employee name.");
+    if (req.user.role === "wholesale") {
+      await requireWholesaleActive(db, req.user);
+      const wholesalerId = await wholesalePrincipal(db, req.user);
+      await transaction(db, async () => {
+        const target = await db.prepare("SELECT u.id,u.email FROM users u JOIN wholesale_memberships m ON m.user_id=u.id WHERE u.id=? AND m.wholesaler_id=? AND u.employee_permissions IS NOT NULL FOR UPDATE")
+          .get(req.params.id, wholesalerId);
+        if (!target) throw bad("Employee not found.", 404);
+        if (mail !== target.email && await db.prepare("SELECT 1 FROM users WHERE email=? AND id<>?").get(mail, target.id))
+          throw bad("An account already uses this email.", 409);
+        await db.prepare("UPDATE users SET name=?,email=? WHERE id=?").run(displayName, mail, target.id);
+        await db.prepare("DELETE FROM sessions WHERE user_id=?").run(target.id);
+      });
+      return res.json({ employees: await wholesaleTeam(db, wholesalerId) });
+    }
+    const vendor = await requireVendor(db, req.user, req.body.vendorId);
+    await transaction(db, async () => {
+      const target = await db.prepare("SELECT u.id,u.email FROM users u JOIN memberships m ON m.user_id=u.id WHERE u.id=? AND m.vendor_id=? AND u.employee_permissions IS NOT NULL FOR UPDATE")
+        .get(req.params.id, vendor.id);
+      if (!target) throw bad("Employee not found.", 404);
+      if (mail !== target.email && await db.prepare("SELECT 1 FROM users WHERE email=? AND id<>?").get(mail, target.id))
+        throw bad("An account already uses this email.", 409);
+      await db.prepare("UPDATE users SET name=?,email=? WHERE id=?").run(displayName, mail, target.id);
+      await db.prepare("DELETE FROM sessions WHERE user_id=?").run(target.id);
+    });
     res.json({ employees: await vendorTeam(db, vendor.id) });
   });
 
