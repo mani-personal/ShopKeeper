@@ -34,6 +34,7 @@ import { Employees } from "./employees";
 import { ProfileMenu } from "./profile-menu";
 import { businessTypes } from "@/lib/vendors";
 import { OfflineVendors } from "./offline-vendors";
+import { AccountPassword } from "./account-password";
 
 const paymentTime = (value: number | string) => new Date(Number(value)).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 const statusTone = (status: string) =>
@@ -84,11 +85,11 @@ export function WholesalePortal() {
   }, []);
   useEffect(() => {
     if (data?.permissions && tab === "Overview" && !data.permissions.includes("dashboard"))
-      setTab(["Requests", "Products", "Vendors", "Transactions", "Returns", "Refunds", "Reports", "Employees", "Settings", "Subscription", "Support"]
+      setTab(["Requests", "Products", "Vendors", "Transactions", "Expenses", "Employees", "Account", "Settings", "Subscription", "Support"]
         .find((name) => {
           const key: Record<string, string> = {
             Requests: "purchases", Products: "inventory", Vendors: "customers",
-            Transactions: "payments", Returns: "returns", Refunds: "returns",
+            Transactions: "payments", Expenses: "reports",
             Reports: "reports", Employees: "employees", Settings: "settings",
           };
           return !key[name] || data.permissions.includes(key[name]);
@@ -183,8 +184,7 @@ export function WholesalePortal() {
     Products: "inventory",
     Vendors: "customers",
     Transactions: "payments",
-    Returns: "returns",
-    Refunds: "returns",
+    Expenses: "reports",
     Reports: "reports",
     Employees: "employees",
     Settings: "settings",
@@ -195,16 +195,15 @@ export function WholesalePortal() {
     "Products",
     "Vendors",
     "Transactions",
-    "Returns",
-    "Refunds",
-    "Reports",
+    "Expenses",
     "Employees",
     "Subscription",
     "Settings",
     "Support",
   ].filter((name) =>
-    !["Reports", "Employees", "Settings", "Support", "Subscription"].includes(name) && (name === "Vendors"
+    !["Employees", "Settings", "Support", "Subscription"].includes(name) && (name === "Vendors"
       ? data.permissions?.some((permission: string) => ["customers", "payments"].includes(permission))
+      : name === "Transactions" ? data.permissions?.some((permission:string)=>["payments","returns"].includes(permission))
       : !tabAccess[name] || data.permissions?.includes(tabAccess[name])),
   );
   return (
@@ -253,6 +252,7 @@ export function WholesalePortal() {
             detail={data.profile.email || data.profile.business_name} logo={data.profile.logo_image}
             links={([
               {label: "My profile & settings", page: "Settings", icon: Settings},
+              {label: "Change password", page: "Account", icon: Settings},
               {label: "Payment history", page: "Transactions", icon: IndianRupee},
               {label: "Subscription", page: "Subscription", icon: ShoppingCart},
               {label: "Employees", page: "Employees", icon: Users},
@@ -342,14 +342,6 @@ export function WholesalePortal() {
                   </small>
                 </span>
               </div>
-              <button
-                type="button"
-                className="btn primary wholesale-camera-button"
-                onClick={() => setScanner(true)}
-              >
-                <ScanBarcode size={18} />
-                Open camera scanner
-              </button>
               <form
                 className="scan-strip wholesale-scan-strip"
                 onSubmit={(e) => {
@@ -376,17 +368,14 @@ export function WholesalePortal() {
           </>
         )}{" "}
         {tab === "Vendors" && <><VendorAccess data={data} post={post} openRequests={() => setTab("Requests")} /><OfflineVendors vendors={data.offlineVendors || []} ledger={data.offlineLedger || []} canEdit={data.permissions.includes("customers")} canPay={data.permissions.includes("payments")} save={post} /></>}{" "}
-        {tab === "Transactions" && <Transactions data={data} reload={load} setMessage={setMessage} />}{" "}
-        {tab === "Returns" && <Returns data={data} post={post} />}{" "}
-        {tab === "Refunds" && <Refunds data={data} post={post} />}{" "}
-        {tab === "Reports" && <WholesaleReports data={data} />}{" "}
+        {tab === "Transactions" && <WholesaleTransactionHub data={data} reload={load} setMessage={setMessage} post={post} />}{" "}
+        {tab === "Expenses" && <WholesaleExpenses data={data} reload={load} />}{" "}
         {tab === "Employees" && <Employees onMessage={setMessage} />}{" "}
         {tab === "Subscription" && (
           <WholesaleSubscription data={data} reload={load} />
         )}{" "}
-        {tab === "Settings" && (
-          <WholesaleSettings data={data} post={post} reload={load} />
-        )}{" "}
+        {tab === "Settings" && <><WholesaleSettings data={data} post={post} reload={load} /><AccountPassword /></>}{" "}
+        {tab === "Account" && <AccountPassword />}{" "}
         {tab === "Support" && <Support />}
         {editing && (
           <div className="panel wholesale-editor">
@@ -613,7 +602,8 @@ export function WholesalePortal() {
 function Overview({ data, onLowStock }: { data: any; onLowStock: () => void }) {
   const sales = data.transactions
       .filter((x: any) => ["paid", "partial"].includes(x.payment_status))
-      .reduce((sum: number, x: any) => sum + Number(x.amount), 0),
+      .reduce((sum: number, x: any) => sum + Number(x.amount), 0) - data.refunds.filter((x:any)=>x.status==="processed").reduce((sum:number,x:any)=>sum+Number(x.amount),0),
+    totalExpenses = (data.expenses||[]).reduce((sum:number,e:any)=>sum+Number(e.amount),0),
     inventoryUnits = data.products.reduce(
       (sum: number, x: any) => sum + Number(x.stock),
       0,
@@ -730,6 +720,7 @@ function Overview({ data, onLowStock }: { data: any; onLowStock: () => void }) {
           <strong>{money(outstanding)}</strong>
           <small>Pending across vendor orders</small>
         </div>
+        {data.permissions.includes("reports")&&<div className="metric"><div><span>Expenses</span><span className="metric-icon tone-1"><IndianRupee size={18}/></span></div><strong>{money(totalExpenses)}</strong><small>Collected less expenses: {money(sales-totalExpenses)}</small></div>}
       </div>
       <div className="bottom-grid">
         <section className="panel padded">
@@ -776,10 +767,18 @@ function Overview({ data, onLowStock }: { data: any; onLowStock: () => void }) {
     </div>
   );
 }
+function WholesaleExpenses({data,reload}:{data:any;reload:()=>Promise<void>}) {
+  const [editing,setEditing]=useState<any>(null),[message,setMessage]=useState("");
+  const expenses=data.expenses||[], total=expenses.reduce((sum:number,e:any)=>sum+Number(e.amount),0);
+  return <div className="wholesale-expenses"><section className="panel padded"><h2>Wholesale expenses</h2><p>Rent, delivery, wages and other business costs. Total recorded: <b>{money(total)}</b></p><form key={editing?.id||"new"} className="form expense-editor" onSubmit={async event=>{event.preventDefault();const form=event.currentTarget,f=new FormData(form);try{await api("/api/wholesale/expenses",{id:editing?.id,category:f.get("category"),description:f.get("description"),amount:Number(f.get("amount")),expenseDate:f.get("expenseDate")});setEditing(null);form.reset();setMessage("Expense saved.");await reload()}catch(error){setMessage((error as Error).message)}}}>
+    <label>Category<select name="category" defaultValue={editing?.category||"Rent"}>{["Rent","Wages","Delivery","Utilities","Packaging","Maintenance","Other"].map(x=><option key={x}>{x}</option>)}</select></label>
+    <label>Description<input name="description" maxLength={300} defaultValue={editing?.description||""} placeholder="Optional note"/></label><label>Amount ₹<input name="amount" type="number" min="0.01" max="10000000" step="0.01" defaultValue={editing?.amount||""} required/></label><label>Date<input name="expenseDate" type="date" defaultValue={editing?.expense_date||new Date().toISOString().slice(0,10)} required/></label><button className="btn primary">{editing?"Update":"Add"} expense</button>{editing&&<button className="btn" type="button" onClick={()=>setEditing(null)}>Cancel</button>}</form><p role="status">{message}</p></section>
+    <section className="panel padded"><h2>Expense history</h2>{expenses.map((e:any)=><div className="record-row" key={e.id}><div><b>{e.category} · {money(Number(e.amount))}</b><small>{e.expense_date} · {e.description||"No note"}</small></div><div className="actions"><button className="btn" onClick={()=>setEditing(e)}>Edit</button><button className="text-button danger" onClick={async()=>{if(!confirm("Delete this expense?"))return;try{await api("/api/wholesale/expenses/"+e.id+"/delete",{});await reload()}catch(error){setMessage((error as Error).message)}}}>Delete</button></div></div>)}{!expenses.length&&<p className="empty-inline">No expenses recorded yet.</p>}</section></div>;
+}
 function WholesaleReports({ data }: { data: any }) {
   const revenue = data.transactions
       .filter((x: any) => ["paid", "partial"].includes(x.payment_status))
-      .reduce((sum: number, x: any) => sum + Number(x.amount), 0),
+      .reduce((sum: number, x: any) => sum + Number(x.amount), 0) - data.refunds.filter((x:any)=>x.status==="processed").reduce((sum:number,x:any)=>sum+Number(x.amount),0),
     outstanding = data.requests.reduce(
       (sum: number, r: any) =>
         sum +
@@ -791,6 +790,7 @@ function WholesaleReports({ data }: { data: any }) {
       (sum: number, p: any) => sum + Number(p.stock) * Number(p.price),
       0,
     ),
+    expenses=(data.expenses||[]).reduce((sum:number,e:any)=>sum+Number(e.amount),0),
     units = data.products.reduce(
       (sum: number, p: any) => sum + Number(p.stock),
       0,
@@ -808,6 +808,7 @@ function WholesaleReports({ data }: { data: any }) {
           <strong>{money(outstanding)}</strong>
           <small>Yet to collect from vendors</small>
         </div>
+        <div className="metric"><span>Expenses recorded</span><strong>{money(expenses)}</strong><small>Revenue after expenses: {money(revenue-expenses)}</small></div>
         <div className="metric">
           <span>Inventory value</span>
           <strong>{money(stockValue)}</strong>
@@ -1005,6 +1006,7 @@ function MarketplaceRequests({
   scanToPack: (order: any) => void;
 }) {
   const [requestView, setRequestView] = useState<"open" | "completed">("open");
+  const [archiveQuery,setArchiveQuery]=useState(""),[from,setFrom]=useState(""),[through,setThrough]=useState(""),[expanded,setExpanded]=useState("");
   async function call(path: string, body: any, message: string) {
     try {
       await api(path, body);
@@ -1050,8 +1052,11 @@ function MarketplaceRequests({
         <button className={requestView === "open" ? "btn primary" : "btn"} onClick={() => setRequestView("open")}>To pack & deliver ({data.requests.filter((r: any) => !["completed", "cancelled"].includes(r.status)).length})</button>
         <button className={requestView === "completed" ? "btn primary" : "btn"} onClick={() => setRequestView("completed")}>Completed & cancelled ({data.requests.filter((r: any) => ["completed", "cancelled"].includes(r.status)).length})</button>
       </div>
+      {requestView === "completed" && <div className="panel padded archive-orders"><div className="archive-filters"><label>Search vendor, product or order<input value={archiveQuery} onChange={e=>setArchiveQuery(e.target.value)} placeholder="Search completed orders"/></label><label>From<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>To<input type="date" value={through} onChange={e=>setThrough(e.target.value)}/></label></div>
+        {data.requests.filter((r:any)=>["completed","cancelled"].includes(r.status) && (!archiveQuery || (r.id+" "+r.vendorName+" "+r.items.map((i:any)=>i.name).join(" ")).toLowerCase().includes(archiveQuery.toLowerCase())) && (!from || new Date(Number(r.created_at)).toISOString().slice(0,10)>=from) && (!through || new Date(Number(r.created_at)).toISOString().slice(0,10)<=through)).map((r:any)=>{const finance=orderFinancials(r,data.transactions,data.returns,data.refunds),open=expanded===r.id;return <article className="archive-order" key={r.id}><button type="button" className="admin-business-row" aria-expanded={open} onClick={()=>setExpanded(open?"":r.id)}><span><b>{r.vendorName} · #{r.id.slice(0,8).toUpperCase()}</b><small>{new Date(Number(r.created_at)).toLocaleString("en-IN")} · {r.items.length} items</small></span><span className={"badge "+statusTone(r.status)}>{r.status}</span><b>{money(finance.payable)}</b></button>{open&&<div className="archive-detail"><p>{r.notes||"No order notes"} · {orderHelp[r.status]}</p>{r.items.map((i:any)=><div className="record-row" key={i.product_id}><b>{i.name}</b><small>{i.quantity} {i.unit}{i.weight?" · "+i.weight:""}</small><b>{money(Number(i.quantity)*Number(i.unit_price))}</b></div>)}<div className="payment-numbers"><span>Paid <b>{money(finance.paid)}</b></span><span>Pending <b>{money(finance.balance)}</b></span><span>Returns <b>{money(finance.returnCredit)}</b></span><span>Refund due <b>{money(finance.refundDue)}</b></span></div><h3>Payments</h3>{data.transactions.filter((t:any)=>t.request_id===r.id).map((t:any)=><div className="record-row" key={t.id}><b>{money(Number(t.amount))} · {t.payment_status}</b><small>{paymentTime(t.created_at)} · {t.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{data.returns.filter((x:any)=>x.request_id===r.id).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.quantity} × {money(Number(x.unit_price))} · {x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.request_id===r.id&&t.id===x.transaction_id)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}{r.status==="completed"&&<WholesaleInvoiceButton order={r} sellerName={data.profile.business_name} sellerGst={data.profile.gst_number} sellerAddress={data.profile.address} buyerName={r.vendorName} transactions={data.transactions} returns={data.returns} refunds={data.refunds}/>}</div>}</article>})}
+      </div>}
       <div className="order-list wholesale-request-tiles">
-        {data.requests.filter((r: any) => requestView === "open" ? !["completed", "cancelled"].includes(r.status) : ["completed", "cancelled"].includes(r.status)).map((r: any) => {
+        {data.requests.filter((r: any) => requestView === "open" && !["completed", "cancelled"].includes(r.status)).map((r: any) => {
           const finance = orderFinancials(
               r,
               data.transactions,
@@ -1151,7 +1156,7 @@ function MarketplaceRequests({
             </article>
           );
         })}
-        {!data.requests.some((r: any) => requestView === "open" ? !["completed", "cancelled"].includes(r.status) : ["completed", "cancelled"].includes(r.status)) && (
+        {requestView === "open" && !data.requests.some((r: any) => !["completed", "cancelled"].includes(r.status)) && (
           <section className="panel padded">
             <p className="empty-inline">{requestView === "open" ? "No open vendor requests." : "No completed requests yet."}</p>
           </section>
@@ -1481,6 +1486,12 @@ function VendorAccess({
     </div>
   );
 }
+function WholesaleTransactionHub({data,reload,setMessage,post}:{data:any;reload:()=>Promise<void>;setMessage:(value:string)=>void;post:(path:string,body:any)=>Promise<void>}){
+  const [view,setView]=useState("Payments");
+  const tabs=[...(data.permissions.includes("payments")?["Payments"]:[]),...(data.permissions.includes("returns")?["Returns","Refunds"]:[])];
+  const current=tabs.includes(view)?view:tabs[0];
+  return <div><div className="console-tabs" role="tablist" aria-label="Transaction records">{tabs.map(x=><button key={x} role="tab" aria-selected={current===x} className={current===x?"active":""} onClick={()=>setView(x)}>{x}</button>)}</div>{current==="Payments"&&<Transactions data={data} reload={reload} setMessage={setMessage}/ >}{current==="Returns"&&<Returns data={data} post={post}/ >}{current==="Refunds"&&<Refunds data={data} post={post}/ >}</div>;
+}
 function Transactions({
   data,
   reload,
@@ -1490,6 +1501,8 @@ function Transactions({
   reload: () => Promise<void>;
   setMessage: (value: string) => void;
 }) {
+  const [selected,setSelected]=useState("");
+  const current=data.transactions.find((x:any)=>x.id===selected),currentOrder=data.requests.find((x:any)=>x.id===current?.request_id);
   const vendors = [...new Set(data.requests.map((r: any) => r.vendor_id))];
   async function settle(path: string, body: any) {
     try {
@@ -1614,7 +1627,7 @@ function Transactions({
       <section className="panel padded">
         <h2>Payment history</h2>
         {data.transactions.map((t: any) => (
-          <div className="record-row" key={t.id}>
+          <div className="record-row return-row" key={t.id} role="button" tabIndex={0} onClick={()=>setSelected(t.id)} onKeyDown={e=>{if(e.key==="Enter")setSelected(t.id)}}>
             <div>
               <b>
                 {t.vendorName} ·{" "}
@@ -1631,8 +1644,8 @@ function Transactions({
             </span>
             {t.payment_status === "pending" && t.submitted_by_vendor && (
               <div className="actions">
-                <button className="btn primary" onClick={() => void settle("/api/marketplace/payments/" + t.id + "/confirm", {})}>Confirm UPI</button>
-                <button className="btn" onClick={() => {
+                <button className="btn primary" onClick={e => {e.stopPropagation();void settle("/api/marketplace/payments/" + t.id + "/confirm", {})}}>Confirm UPI</button>
+                <button className="btn" onClick={e => {e.stopPropagation();
                   const reason = prompt("Why is this payment rejected?", "Transaction not found");
                   if (reason !== null) void settle("/api/marketplace/payments/" + t.id + "/reject", { reason });
                 }}>Reject</button>
@@ -1644,6 +1657,7 @@ function Transactions({
           <p className="empty-inline">No payments recorded yet.</p>
         )}
       </section>
+      {current&&<section className="panel padded return-details"><div className="panel-heading"><div><h2>Payment #{current.id.slice(0,8).toUpperCase()}</h2><p>{current.vendorName} · Order #{current.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={()=>setSelected("")}>Close</button></div><p>{paymentTime(current.created_at)} · {money(Number(current.amount))} · {current.payment_status} · {current.reference||"No reference"}</p><p>Order status: {currentOrder?.status||"Unavailable"}</p><h3>Order payments</h3>{data.transactions.filter((x:any)=>x.request_id===current.request_id).map((x:any)=><div className="record-row" key={x.id}><b>{money(Number(x.amount))} · {x.payment_status}</b><small>{paymentTime(x.created_at)} · {x.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{data.returns.filter((x:any)=>x.request_id===current.request_id).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.request_id===current.request_id&&t.id===x.transaction_id)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}</section>}
     </div>
   );
 }
@@ -1654,6 +1668,8 @@ function Returns({
   data: any;
   post: (p: string, b: any) => Promise<void>;
 }) {
+  const [selected,setSelected]=useState("");
+  const current=data.returns.find((r:any)=>r.id===selected),order=data.requests.find((r:any)=>r.id===current?.request_id);
   return (
     <section className="panel table-scroll">
       <table className="ledger-table">
@@ -1677,7 +1693,7 @@ function Returns({
           {data.returns.map((r: any) => (
             <tr key={r.id}>
               <td>{r.vendorName}</td>
-              <td>{r.product_name}</td>
+              <td><button className="text-button" onClick={()=>setSelected(r.id)}>{r.product_name} · View details</button></td>
               <td>
                 {r.quantity} {r.unit}
               </td>
@@ -1736,6 +1752,7 @@ function Returns({
       {!data.returns.length && (
         <p className="empty-inline">Vendor product returns will appear here.</p>
       )}
+      {current&&<div className="return-details padded"><button className="btn" onClick={()=>setSelected("")}>Close details</button><h3>{current.product_name} · {current.vendorName}</h3><p>Order #{current.request_id.slice(0,8).toUpperCase()} · {order?.status||"Unavailable"} · Return {current.status}</p><p>{current.quantity} {current.unit} × {money(Number(current.unit_price))} = {money(Number(current.quantity)*Number(current.unit_price))} · {current.reason}</p><h4>Payment history</h4>{data.transactions.filter((p:any)=>p.request_id===current.request_id).map((p:any)=><div className="record-row" key={p.id}><b>{money(Number(p.amount))} · {p.payment_status}</b><small>{paymentTime(p.created_at)} · {p.reference}</small></div>)}</div>}
     </section>
   );
 }
@@ -1746,6 +1763,8 @@ function Refunds({
   data: any;
   post: (p: string, b: any) => Promise<void>;
 }) {
+  const [selected,setSelected]=useState("");
+  const current=data.refunds.find((r:any)=>r.id===selected),payment=data.transactions.find((p:any)=>p.id===current?.transaction_id),order=data.requests.find((r:any)=>r.id===payment?.request_id);
   return (
     <section className="panel padded">
       <h2>Payment refund management</h2>
@@ -1786,17 +1805,18 @@ function Refunds({
         <button className="btn primary">Record refund</button>
       </form>
       {data.refunds.map((r: any) => (
-        <div className="record-row" key={r.id}>
+        <button type="button" className="admin-business-row" key={r.id} onClick={()=>setSelected(r.id)}>
           <div>
             <b>{money(Number(r.amount))}</b>
             <small>{r.reason}</small>
           </div>
           <span className={"badge " + statusTone(r.status)}>{r.status}</span>
-        </div>
+        </button>
       ))}
       {!data.refunds.length && (
         <p className="empty-inline">No payment refunds recorded.</p>
       )}
+      {current&&<div className="return-details"><button className="btn" onClick={()=>setSelected("")}>Close details</button><h3>Refund {money(Number(current.amount))}</h3><p>{current.status} · {current.reason} · {paymentTime(current.created_at)}</p><p>Vendor {payment?.vendorName||"Unavailable"} · Order #{payment?.request_id?.slice(0,8).toUpperCase()||"—"} · {order?.status||"Unavailable"}</p><p>Original payment: {payment?money(Number(payment.amount)):"Unavailable"} · {payment?.payment_status||""} · {payment?.reference||"No reference"}</p></div>}
     </section>
   );
 }
