@@ -286,6 +286,7 @@ export function registerMarketplaceRoutes(app, db) {
       sku = typeof p.sku === "string" ? p.sku.trim().slice(0, 100) : "",
       category = clean(p.category, 80) || "General",
       subcategory = typeof p.subcategory === "string" ? p.subcategory.trim() : "",
+      weight = typeof p.weight === "string" ? p.weight.trim() : "",
       description =
         typeof p.description === "string"
           ? p.description.trim().slice(0, 500)
@@ -295,6 +296,7 @@ export function registerMarketplaceRoutes(app, db) {
     if (
       !name ||
       subcategory.length > 100 ||
+      weight.length > 50 ||
       !unit ||
       !amount(p.price) ||
       Number(p.price) <= 0 ||
@@ -318,7 +320,7 @@ export function registerMarketplaceRoutes(app, db) {
       throw bad("This barcode already belongs to another wholesale pack size. Use a unique item code for each product.");
     await db
       .prepare(
-        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate,subcategory) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,bulk_price=EXCLUDED.bulk_price,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate,subcategory=EXCLUDED.subcategory WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
+        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate,subcategory,weight) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate,subcategory=EXCLUDED.subcategory,weight=EXCLUDED.weight WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
       )
       .run(
         id,
@@ -340,6 +342,7 @@ export function registerMarketplaceRoutes(app, db) {
         hsnCode,
         gstRate,
         subcategory,
+        weight,
       );
     await recordActivity(db, {
       actorId: req.user.id,
@@ -425,9 +428,9 @@ export function registerMarketplaceRoutes(app, db) {
               : Number(p.price);
         await db
           .prepare(
-            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate,weight) VALUES(?,?,?,?,?,?,?)",
           )
-          .run(id, p.id, quantity, unitPrice, p.hsn_code || "", Number(p.gst_rate || 0));
+          .run(id, p.id, quantity, unitPrice, p.hsn_code || "", Number(p.gst_rate || 0), p.weight || "");
       }
     });
     await recordActivity(db, {
@@ -782,9 +785,9 @@ export function registerMarketplaceRoutes(app, db) {
       for (const x of lines)
         await db
           .prepare(
-            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate,weight) VALUES(?,?,?,?,?,?,?)",
           )
-          .run(id, x.product_id, x.quantity, x.price, x.hsn_code || "", Number(x.gst_rate || 0));
+          .run(id, x.product_id, x.quantity, x.price, x.hsn_code || "", Number(x.gst_rate || 0), x.weight || "");
     });
     res.json(await marketplaceCatalog(db, vendor.id));
   });
@@ -837,6 +840,7 @@ export function registerMarketplaceRoutes(app, db) {
           product.stock += line.quantity;
           product.cost = Number(line.unit_price);
           product.price = selling;
+          if (line.weight && !product.weight) product.weight = line.weight;
         } else {
           product = {
             id: randomUUID(),
@@ -844,6 +848,7 @@ export function registerMarketplaceRoutes(app, db) {
             barcode: line.sku || "",
             category: line.category || "Wholesale",
             unit: line.unit,
+            weight: line.weight || "",
             price: selling,
             cost: Number(line.unit_price),
             stock: line.quantity,
