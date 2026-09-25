@@ -3,8 +3,8 @@ import { initial } from "./domain/store.mjs";
 import { businessTypes } from "./domain/vendors.mjs";
 import { email, hashPassword, requirePermission, hasPermission, limit } from "./security.mjs";
 import { transaction } from "./db.mjs";
-import { pricing, subscriptionInfo } from "./subscriptions.mjs";
-import { wholesalePricing, wholesaleSubscriptionInfo } from "./wholesale-subscriptions.mjs";
+import { pricing, subscriptionInfo, validity } from "./subscriptions.mjs";
+import { wholesalePricing, wholesaleSubscriptionInfo, wholesaleValidity } from "./wholesale-subscriptions.mjs";
 
 const bad = (message, status = 400) => Object.assign(Error(message), { status });
 const field = (value, max = 150) => typeof value === "string" && value.trim() && value.trim().length <= max ? value.trim() : "";
@@ -46,7 +46,7 @@ export function registerBusinessRoutes(app, db) {
     if (!showVendors && !showWholesale) throw bad("Administrator access required.", 403);
     const vendors = showVendors ? await db.prepare("SELECT v.id,v.owner_name,v.business_type,v.data,v.suspended,v.valid_until,v.trial_days,v.logo_image,(SELECT u.email FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.vendor_id=v.id AND u.employee_permissions IS NULL ORDER BY u.created_at LIMIT 1) AS email FROM vendors v ORDER BY v.created_at DESC").all() : [];
     const wholesalers = showWholesale ? await db.prepare("SELECT w.*,u.name,u.email,u.disabled FROM wholesalers w JOIN users u ON u.id=w.user_id WHERE u.employee_permissions IS NULL ORDER BY w.created_at DESC").all() : [];
-    res.json({ vendors: vendors.map(v => ({ id:v.id, name:JSON.parse(v.data).settings.name, owner:v.owner_name, email:v.email, category:v.business_type, logo:v.logo_image, suspended:v.suspended, validUntil:v.valid_until, trialDays:v.trial_days })), wholesalers: wholesalers.map(w=>({id:w.user_id,name:w.business_name,owner:w.name,email:w.email,category:w.business_category,logo:w.logo_image,disabled:w.disabled,validUntil:w.valid_until})) });
+    res.json({ vendors: vendors.map(v => ({ id:v.id, name:JSON.parse(v.data).settings.name, owner:v.owner_name, email:v.email, category:v.business_type, logo:v.logo_image, suspended:v.suspended, ...validity(v) })), wholesalers: wholesalers.map(w=>({id:w.user_id,name:w.business_name,owner:w.name,email:w.email,category:w.business_category,logo:w.logo_image,disabled:w.disabled,...wholesaleValidity(w)})) });
   });
   app.post("/api/admin/businesses", async (req, res) => {
     const kind = req.body.kind;
