@@ -923,7 +923,7 @@ export function registerMarketplaceRoutes(app, db) {
     res.json(await marketplaceCatalog(db, vendor.id));
   });
   app.get("/api/marketplace/admin", async (req, res) => {
-    admin(req.user);
+    requirePermission(req.user,"wholesale");
     const summary = await db
       .prepare(
         `SELECT (SELECT COUNT(*) FROM wholesalers) AS wholesalers,(SELECT COUNT(*) FROM wholesalers WHERE verified=TRUE) AS verified,(SELECT COUNT(*) FROM wholesale_requests) AS orders,(SELECT COUNT(*) FROM wholesale_requests WHERE status IN ('pending','quoted')) AS action_needed,(SELECT COALESCE(SUM(i.quantity*i.unit_price),0) FROM wholesale_request_items i JOIN wholesale_requests r ON r.id=i.request_id WHERE r.status IN ('delivered','completed')) AS order_value,(SELECT COUNT(*) FROM wholesale_vendor_favourites) AS favourites`,
@@ -937,7 +937,7 @@ export function registerMarketplaceRoutes(app, db) {
     res.json({ summary, sellers });
   });
   app.post("/api/marketplace/admin/verify", async (req, res) => {
-    admin(req.user);
+    requirePermission(req.user,"wholesale");
     const verified = req.body.verified === true,
       result = await db
         .prepare("UPDATE wholesalers SET verified=? WHERE user_id=?")
