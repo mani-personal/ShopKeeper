@@ -793,6 +793,7 @@ export function registerMarketplaceRoutes(app, db) {
   });
   app.post("/api/marketplace/requests/:id/receive", async (req, res) => {
     const vendor = await requireVendor(db, req.user, req.body.vendorId),
+      receivedBarcodes = req.body.barcodes && typeof req.body.barcodes === "object" && !Array.isArray(req.body.barcodes) ? req.body.barcodes : {},
       sellingPrices =
         req.body.sellingPrices &&
         typeof req.body.sellingPrices === "object" &&
@@ -816,8 +817,15 @@ export function registerMarketplaceRoutes(app, db) {
             "SELECT i.*,p.name,p.sku,p.unit,p.category,p.mrp FROM wholesale_request_items i JOIN wholesale_products p ON p.id=i.product_id WHERE i.request_id=?",
           )
           .all(order.id),
-        state = JSON.parse(vendor.data);
+        state = JSON.parse(vendor.data),
+        seenBarcodes = new Set();
       for (const line of lines) {
+        const enteredBarcode = Object.prototype.hasOwnProperty.call(receivedBarcodes, line.product_id) ? receivedBarcodes[line.product_id] : line.sku;
+        if (typeof enteredBarcode !== "string" || enteredBarcode.length >= 200)
+          throw bad(`${line.name}: enter a valid barcode or leave it blank.`);
+        const barcode = enteredBarcode.trim();
+        if (barcode && seenBarcodes.has(barcode)) throw bad("Two delivered products have the same barcode. Use a unique item code for each pack size.");
+        if (barcode) seenBarcodes.add(barcode);
         const entered = sellingPrices[line.product_id],
           selling =
             entered == null || entered === ""
@@ -831,8 +839,8 @@ export function registerMarketplaceRoutes(app, db) {
           throw bad(
             `${line.name}: selling price must be at least cost${line.mrp ? " and not above MRP" : ""}.`,
           );
-        let product = line.sku
-          ? state.products.find((p) => p.barcode === line.sku)
+        let product = barcode
+          ? state.products.find((p) => p.barcode === barcode)
           : state.products.find(
               (p) => p.name.toLowerCase() === line.name.toLowerCase(),
             );
@@ -845,7 +853,7 @@ export function registerMarketplaceRoutes(app, db) {
           product = {
             id: randomUUID(),
             name: line.name,
-            barcode: line.sku || "",
+            barcode,
             category: line.category || "Wholesale",
             unit: line.unit,
             weight: line.weight || "",
