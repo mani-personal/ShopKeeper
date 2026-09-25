@@ -8,6 +8,7 @@ type Activity = {
   detail: string;
   category: string;
   route?: string;
+  wholesaler_id?: string;
   created_at: number;
   actor_name?: string;
   is_read: boolean;
@@ -29,7 +30,7 @@ const fallbackRoute: Record<string, string> = {
 export function Notifications({
   onNavigate,
 }: {
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, activity: Activity) => void;
 }) {
   const [open, setOpen] = useState(false),
     [events, setEvents] = useState<Activity[]>([]),
@@ -117,7 +118,7 @@ export function Notifications({
                     if (!e.is_read)
                       setUnread((value) => Math.max(0, value - 1));
                     setOpen(false);
-                    if (target && onNavigate) onNavigate(target);
+                    if (target && onNavigate) onNavigate(target, e);
                   }}
                 >
                   <i />
