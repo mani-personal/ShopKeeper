@@ -963,6 +963,12 @@ td b {
   overflow: auto;
   margin: 20px 0;
 }
+.pos-scan-tiles:not(:has(.cart-empty)){display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));align-content:start;gap:12px;padding:2px}
+.pos-scan-tiles .cart-line{min-width:0;min-height:164px;display:grid;grid-template-columns:minmax(0,1fr);gap:7px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);box-shadow:0 5px 18px rgba(0,0,0,.04)}
+.pos-scan-tiles .cart-line > div:last-child{flex-direction:row;align-items:center;justify-content:space-between}
+.pos-scan-tiles .sale-line-field input{max-width:120px}
+.admin-approval-grid{display:grid;gap:16px;min-width:0}
+@media(max-width:640px){.pos-scan-tiles:not(:has(.cart-empty)){grid-template-columns:1fr}}
 .cart-empty {
   min-height: 210px;
   display: flex;
