@@ -1,3 +1,17 @@
+export function saleReceiptNumber(sales, sale) {
+    if (sale.receiptNumber)
+        return sale.receiptNumber;
+    const used = new Set(sales.map(x => x.receiptNumber).filter((n) => Number.isInteger(n) && !!n && n > 0));
+    let next = 1;
+    for (const old of sales.filter(x => !x.receiptNumber).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+        while (used.has(next))
+            next++;
+        if (old.id === sale.id)
+            return next;
+        used.add(next++);
+    }
+    return next;
+}
 export const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 export function productDiscount(p, settings) {
     const mode = p.discountMode === 'inherit' ? (settings?.discountMode ?? 'none') : (p.discountMode ?? 'auto');
@@ -89,15 +103,29 @@ export function mutate(s, a) {
             if (a.items.length > 200)
                 throw Error('A bill can contain up to 200 different products.');
             const seen = new Set();
-            const items = a.items.map((line) => { const p = s.products.find(x => x.id === line.id); if (!p || seen.has(line.id) || !Number.isInteger(line.qty) || line.qty < 1 || line.qty > 1000000 || line.qty > p.stock)
-                throw Error('Stock changed. Refresh and check bill quantities.'); seen.add(line.id); if (line.unitPrice !== undefined && (!num(line.unitPrice) || roundMoney(line.unitPrice) !== line.unitPrice || (p.mrp !== undefined && line.unitPrice > p.mrp)))
+            const items = a.items.map((line) => { if (seen.has(line.id) || !Number.isInteger(line.qty) || line.qty < 1 || line.qty > 1000000)
+                throw Error('Enter valid, unique bill items and quantities.'); seen.add(line.id); if (line.manual === true) {
+                if (typeof line.id !== 'string' || !/^manual:[a-f0-9-]{36}$/.test(line.id) || !txt(line.name) || !num(line.unitPrice) || line.unitPrice <= 0 || !num(line.cost) || roundMoney(line.unitPrice) !== line.unitPrice || roundMoney(line.cost) !== line.cost)
+                    throw Error('Enter a manual item name, selling price and purchase cost.');
+                return { id: line.id, name: line.name.trim(), barcode: '', category: 'Manual sale', unit: 'piece', stock: 0, min: 0, price: line.unitPrice, cost: line.cost, discountMode: 'none', customDiscount: 0, qty: line.qty };
+            } const p = s.products.find(x => x.id === line.id); if (!p || line.qty > p.stock)
+                throw Error('Stock changed. Refresh and check bill quantities.'); if (line.unitPrice !== undefined && (!num(line.unitPrice) || roundMoney(line.unitPrice) !== line.unitPrice || (p.mrp !== undefined && line.unitPrice > p.mrp)))
                 throw Error('Enter a valid selling price no higher than MRP.'); return line.unitPrice !== undefined ? { ...p, price: line.unitPrice, discountMode: "none", customDiscount: 0, qty: line.qty } : { ...p, discountMode: "custom", customDiscount: productDiscount(p, s.settings), qty: line.qty }; });
             const subtotal = roundMoney(items.reduce((t, p) => t + p.price * p.qty, 0));
             const savings = roundMoney(items.reduce((t, p) => t + productDiscount(p) * p.qty, 0));
             if (a.discount > roundMoney(subtotal - savings))
                 throw Error('Bill discount cannot exceed the total after product discounts.');
-            items.forEach((p) => { s.products.find(x => x.id === p.id).stock -= p.qty; });
-            s.sales.unshift({ id: a.id, date: new Date().toISOString(), customer: typeof a.customer === 'string' ? a.customer.slice(0, 200) : 'Walk-in customer', payment: a.payment, items, total: roundMoney(subtotal - savings - a.discount), discount: roundMoney(savings + a.discount), productDiscount: savings, billDiscount: a.discount });
+            items.filter((p) => !p.id.startsWith('manual:')).forEach((p) => { s.products.find(x => x.id === p.id).stock -= p.qty; });
+            const usedNumbers = new Set(s.sales.map(x => x.receiptNumber).filter((n) => Number.isInteger(n) && !!n && n > 0));
+            let legacyNumber = 1;
+            for (const old of s.sales.filter(x => !x.receiptNumber).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+                while (usedNumbers.has(legacyNumber))
+                    legacyNumber++;
+                old.receiptNumber = legacyNumber;
+                usedNumbers.add(legacyNumber++);
+            }
+            const receiptNumber = s.sales.reduce((max, x) => Math.max(max, x.receiptNumber ?? 0), 0) + 1;
+            s.sales.unshift({ id: a.id, receiptNumber, date: new Date().toISOString(), customer: typeof a.customer === 'string' ? a.customer.slice(0, 200) : 'Walk-in customer', payment: a.payment, items, total: roundMoney(subtotal - savings - a.discount), discount: roundMoney(savings + a.discount), productDiscount: savings, billDiscount: a.discount });
             break;
         }
         case 'contact': {
