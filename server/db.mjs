@@ -111,8 +111,9 @@ export async function migrate(db) {
       13: "offline_wholesale_vendors_weight",
       14: "admin_account_removal",
       15: "wholesale_expenses",
+      16: "special_discounts",
     };
-    for (const version of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    for (const version of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
       if (
         !(
           await db.query(
