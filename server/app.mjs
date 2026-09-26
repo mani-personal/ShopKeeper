@@ -718,14 +718,13 @@ export function createApp(
         revoke_access: "Vendor access revoked",
         logo_update: "Store logo updated",
       };
-      await recordActivity(db, {
+      if (a.type !== "sale") await recordActivity(db, {
         actorId: user.id,
         vendorId: selected ?? null,
         scope: "vendor",
         category: a.type.startsWith("subscription_") ? "subscription" : a.type,
         title: titles[a.type] || "Store activity",
-        detail:
-          a.type === "sale" ? "A sale was added to the store records." : "",
+        detail: "",
       });
     });
     res.json({
