@@ -7444,3 +7444,21 @@ body.printing-invoice .invoice-sheet td {
 .account-menu-panel > .account-menu-logout { color: #c92e38; border-top: 1px solid var(--border); margin-top: 8px; border-radius: 0; }
 @media (max-width: 650px) { .account-menu-panel { position: fixed; top: 65px; right: 12px; max-height: calc(100dvh - 80px); }
   .account-menu > summary { width: 37px; height: 37px; } }
+
+/* Keep the bill controls aligned and the entered quantity legible. */
+.pos-scan-rows:has(.cart-line){min-height:0}
+.pos-scan-rows .cart-line{grid-template-columns:minmax(95px,1fr) 104px 112px minmax(88px,auto);column-gap:9px}
+.pos-scan-rows .cart-line .pos-row-product{align-self:center}
+.pos-scan-rows .cart-line .pos-row-quantity .sale-line-field{flex:1;min-width:64px}
+.pos-scan-rows .cart-line .pos-row-price,.pos-scan-rows .cart-line .pos-row-quantity .sale-line-field{font-size:11px;white-space:nowrap}
+.pos-scan-rows .cart-line .sale-line-field input{min-height:40px;color:var(--foreground);font-size:14px;font-weight:600;appearance:textfield;-moz-appearance:textfield}
+.pos-scan-rows .cart-line .sale-line-field input::-webkit-inner-spin-button,.pos-scan-rows .cart-line .sale-line-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.pos-scan-rows .cart-line .pos-row-stepper{flex:none}
+.pos-scan-rows .cart-line .pos-row-total{align-self:center}
+@container (max-width:500px){
+  .pos-scan-rows .cart-line{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px 12px}
+  .pos-scan-rows .cart-line .pos-row-product{grid-column:1/-1}
+  .pos-scan-rows .cart-line .pos-row-quantity{grid-column:1}
+  .pos-scan-rows .cart-line .pos-row-price{grid-column:2}
+  .pos-scan-rows .cart-line .pos-row-total{grid-column:1/-1;flex-direction:row;justify-content:flex-end;align-items:center;gap:10px}
+}
