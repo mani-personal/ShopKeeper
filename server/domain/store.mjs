@@ -1,10 +1,11 @@
 export const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-export function productDiscount(p) {
-    const mode = p.discountMode ?? 'auto';
+export function productDiscount(p, settings) {
+    const mode = p.discountMode === 'inherit' ? (settings?.discountMode ?? 'none') : (p.discountMode ?? 'auto');
     const basis = p.discountBasis === 'price' ? p.price : p.cost;
-    return roundMoney(Math.min(p.price, Math.max(0, mode === 'none' ? 0 : mode === 'custom' ? (p.customDiscount ?? 0) : basis > 100 ? 10 : basis > 50 ? 3 : 0)));
+    const custom = p.discountMode === 'inherit' ? settings?.customDiscount : p.customDiscount;
+    return roundMoney(Math.min(p.price, Math.max(0, mode === 'none' ? 0 : mode === 'custom' ? (custom ?? 0) : basis > 100 ? 10 : basis > 50 ? 3 : 0)));
 }
-export const netPrice = (p) => roundMoney(p.price - productDiscount(p));
+export const netPrice = (p, settings) => roundMoney(p.price - productDiscount(p, settings));
 export const trialDaysLeft = (s, now = Date.now()) => s.trialStartedAt ? Math.max(0, Math.ceil((new Date(s.trialStartedAt).getTime() + 10 * 86400000 - now) / 86400000)) : 10;
 export const supplierKey = (name) => name.trim().toLowerCase();
 export function supplierAccounts(s) {
@@ -29,7 +30,7 @@ export function financialSummary(s, from = '', to = '9999-12-31') {
     const expenses = roundMoney(s.expenses.filter(x => day(x.date) >= from && day(x.date) <= to).reduce((t, x) => t + x.amount, 0));
     return { sales, revenue, cost, gross, expenses, net: roundMoney(gross - expenses), margin: revenue ? roundMoney(gross / revenue * 100) : 0, discounts: roundMoney(sales.reduce((t, x) => t + x.discount, 0)), units: sales.reduce((t, x) => t + x.items.reduce((n, p) => n + p.qty, 0), 0) };
 }
-export function initial() { return { products: [], sales: [], purchases: [], customers: [], suppliers: [], expenses: [], supplierReturns: [], supplierPayments: [], settings: { name: 'My General Store', phone: '', address: '' }, demo: false }; }
+export function initial() { return { products: [], sales: [], purchases: [], customers: [], suppliers: [], expenses: [], supplierReturns: [], supplierPayments: [], settings: { name: 'My General Store', phone: '', address: '', discountMode: 'none', customDiscount: 0 }, demo: false }; }
 export function demoProducts() { return [['Aashirvaad Atta', 'Staples', 275, 240, 42, '5 kg'], ['Tata Salt', 'Staples', 28, 23, 8, '1 kg'], ['Amul Taaza Milk', 'Dairy', 28, 25, 24, '500 ml'], ['Fortune Sunflower Oil', 'Staples', 145, 125, 6, '1 L'], ['Maggi 2-Minute Noodles', 'Snacks', 14, 11, 72, '70 g'], ['Britannia Good Day', 'Snacks', 30, 24, 48, '120 g'], ['Surf Excel Easy Wash', 'Household', 135, 115, 4, '1 kg'], ['Colgate Strong Teeth', 'Personal care', 110, 92, 18, '200 g'], ['Tata Tea Premium', 'Beverages', 140, 118, 22, '250 g'], ['Parle-G Biscuits', 'Snacks', 10, 8, 96, '80 g'], ['Dove Beauty Bar', 'Personal care', 62, 50, 14, '100 g'], ['Dettol Handwash', 'Household', 99, 82, 0, '200 ml']].map((p, i) => ({ id: 'sample-' + i, name: p[0], category: p[1], price: p[2], cost: p[3], stock: p[4], unit: p[5], min: 10, barcode: String(8901000000000 + i) })); }
 export const stockTarget = (p) => p.target ?? Math.max(p.stock, p.min * 5, 1);
 export const stockThreshold = (p, s) => Math.floor(stockTarget(p) * (s.settings.lowPercent ?? 20) / 100);
@@ -63,15 +64,17 @@ export function mutate(s, a) {
                 throw Error('Invalid discount basis.');
             if (p.mrp !== undefined && (!num(p.mrp) || p.mrp < p.price))
                 throw Error('MRP must be at least the selling price.');
-            if (!['auto', 'custom', 'none'].includes(mode))
+            if (!['auto', 'custom', 'none', 'inherit'].includes(mode))
                 throw Error('Choose a valid discount mode.');
             if (mode === 'custom' && (!num(p.customDiscount) || p.customDiscount > p.price || Math.abs(p.customDiscount * 100 - Math.round(p.customDiscount * 100)) > 0.000001))
                 throw Error('Custom discount must be between zero and selling price, with at most two decimal places.');
+            if (p.specialDiscount !== undefined && typeof p.specialDiscount !== 'boolean')
+                throw Error('Choose a valid special discount option.');
             if (p.subcategory !== undefined && (typeof p.subcategory !== 'string' || p.subcategory.length > 100))
                 throw Error('Subcategory must be at most 100 characters.');
             if (p.weight !== undefined && (typeof p.weight !== 'string' || p.weight.length > 50))
                 throw Error('Weight must be at most 50 characters.');
-            const clean = { ...(p.mrp !== undefined ? { mrp: p.mrp } : {}), subcategory: (p.subcategory ?? '').trim(), weight: (p.weight ?? '').trim(), discountBasis: p.discountBasis ?? "cost", discountMode: mode, customDiscount: mode === 'custom' ? p.customDiscount : 0, target: p.target ?? Math.max(p.stock, p.min * 5, 1), id: i >= 0 ? p.id : id(), name: p.name.trim(), barcode: p.barcode.trim(), category: p.category, unit: p.unit, price: p.price, cost: p.cost, stock: p.stock, min: p.min };
+            const clean = { ...(p.mrp !== undefined ? { mrp: p.mrp } : {}), subcategory: (p.subcategory ?? '').trim(), weight: (p.weight ?? '').trim(), discountBasis: p.discountBasis ?? "cost", discountMode: mode, customDiscount: mode === 'custom' ? p.customDiscount : 0, specialDiscount: p.specialDiscount === true, target: p.target ?? Math.max(p.stock, p.min * 5, 1), id: i >= 0 ? p.id : id(), name: p.name.trim(), barcode: p.barcode.trim(), category: p.category, unit: p.unit, price: p.price, cost: p.cost, stock: p.stock, min: p.min };
             if (i >= 0)
                 s.products[i] = clean;
             else
@@ -88,7 +91,7 @@ export function mutate(s, a) {
             const seen = new Set();
             const items = a.items.map((line) => { const p = s.products.find(x => x.id === line.id); if (!p || seen.has(line.id) || !Number.isInteger(line.qty) || line.qty < 1 || line.qty > 1000000 || line.qty > p.stock)
                 throw Error('Stock changed. Refresh and check bill quantities.'); seen.add(line.id); if (line.unitPrice !== undefined && (!num(line.unitPrice) || roundMoney(line.unitPrice) !== line.unitPrice || (p.mrp !== undefined && line.unitPrice > p.mrp)))
-                throw Error('Enter a valid selling price no higher than MRP.'); return line.unitPrice !== undefined ? { ...p, price: line.unitPrice, discountMode: "none", customDiscount: 0, qty: line.qty } : { ...p, discountMode: "custom", customDiscount: productDiscount(p), qty: line.qty }; });
+                throw Error('Enter a valid selling price no higher than MRP.'); return line.unitPrice !== undefined ? { ...p, price: line.unitPrice, discountMode: "none", customDiscount: 0, qty: line.qty } : { ...p, discountMode: "custom", customDiscount: productDiscount(p, s.settings), qty: line.qty }; });
             const subtotal = roundMoney(items.reduce((t, p) => t + p.price * p.qty, 0));
             const savings = roundMoney(items.reduce((t, p) => t + productDiscount(p) * p.qty, 0));
             if (a.discount > roundMoney(subtotal - savings))
@@ -215,11 +218,13 @@ export function mutate(s, a) {
             s.expenses.unshift({ id: id(), date: new Date().toISOString(), name: a.name, amount: a.amount });
             break;
         case 'settings':
+            if (!['none', 'auto', 'custom'].includes(a.discountMode ?? s.settings.discountMode ?? 'none') || !num(a.customDiscount ?? s.settings.customDiscount ?? 0) || roundMoney(a.customDiscount ?? s.settings.customDiscount ?? 0) !== (a.customDiscount ?? s.settings.customDiscount ?? 0))
+                throw Error('Choose a valid store discount and custom amount.');
             if (!txt(a.name) || typeof a.phone !== 'string' || typeof a.address !== 'string' || a.address.length > 500)
                 throw Error('Enter valid store details.');
             if (!num(a.lowPercent) || a.lowPercent > 100)
                 throw Error('Low-stock percentage must be between 0 and 100.');
-            s.settings = { name: a.name.trim(), phone: a.phone.slice(0, 30), address: a.address, lowPercent: a.lowPercent };
+            s.settings = { name: a.name.trim(), phone: a.phone.slice(0, 30), address: a.address, lowPercent: a.lowPercent, discountMode: a.discountMode ?? s.settings.discountMode ?? 'none', customDiscount: a.customDiscount ?? s.settings.customDiscount ?? 0 };
             break;
         default: throw Error('Unknown action.');
     }
