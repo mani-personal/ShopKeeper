@@ -29,7 +29,7 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
   '<table class="receipt-lines"><colgroup><col class="receipt-product-col"><col class="receipt-qty-col"><col class="receipt-mrp-col"><col class="receipt-rate-col"><col class="receipt-total-col"></colgroup><thead><tr><th>Product</th><th class="numeric">Qty</th><th class="numeric">MRP</th><th class="numeric">Rate</th><th class="numeric">Total</th></tr></thead>'+lines+'</table>'+ 
   '<section class="receipt-totals">'+row('SUM',rupees(subtotal),'receipt-sum')+(allMrp?row('MRP total',rupees(mrpTotal)):'')+
   row('Discount','− '+rupees(discount))+
-  row('Round off',rupees(0))+row('Total Amount',rupees(sale.total),'receipt-grand')+row('Customer saved'+(allMrp?' vs MRP':' (known MRP)'),rupees(saved),'receipt-savings')+'</section>'+ 
+  row('Round off',rupees(0))+row('Total Amount',rupees(sale.total),'receipt-grand')+row('Customer saved'+(allMrp?' vs MRP':''),rupees(saved),'receipt-savings')+'</section>'+ 
   '<section class="receipt-payment"><div class="receipt-payment-heading"><b>Pay Mode Received</b><b>Amount</b></div>'+row(sale.payment,rupees(sale.total))+'</section>'+ 
   '<footer><p>Thank you for shopping with us!</p><p>Please keep this receipt.</p></footer></article>';
 }
