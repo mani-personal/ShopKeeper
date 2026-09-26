@@ -38,6 +38,8 @@ type Product = {
   category: string;
   description: string;
   price: number;
+  special_active?: boolean;
+  special_discount?: number;
   mrp?: number;
   stock: number;
   min_qty: number;
@@ -46,6 +48,7 @@ type Product = {
   rating: number;
   reviews: number;
 };
+const offerPrice=(p:Product,quantity:number)=>Math.round(((quantity>=Number(p.bulk_qty||Infinity)&&p.bulk_price!=null?Number(p.bulk_price):Number(p.price))-(p.special_active?Number(p.special_discount||0):0))*100)/100;
 const tone = (status: string) =>
   ["completed", "paid", "received", "delivered"].includes(status)
     ? "green"
@@ -131,10 +134,7 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
       value = selected.reduce(
         (sum, p) =>
           sum +
-          (qty[p.id] >= Number(p.bulk_qty || Infinity)
-            ? Number(p.bulk_price || p.price)
-            : Number(p.price)) *
-            qty[p.id],
+          offerPrice(p,qty[p.id]) * qty[p.id],
         0,
       );
     if (value < Number(wholesaler.min_order || 0)) {
@@ -330,18 +330,19 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
                     {p.verified && <BadgeCheck size={17} />}
                   </div>
                   <h3>{p.name}</h3>
+                  {p.special_active && <span className="badge green">Special discount −{money(Number(p.special_discount))} per unit</span>}
                   <small>
                     {p.business_name} · {p.weight ? p.weight + " · " : ""}{p.unit}
                     {p.sku ? " · " + p.sku : ""}
                   </small>
                   {p.description && <p>{p.description}</p>}
                   <div className="market-price">
-                    <strong>{money(Number(p.price))}</strong>
+                    <strong>{money(offerPrice(p,qty[p.id]||1))}</strong>
                     {p.mrp && <del>{money(Number(p.mrp))}</del>}
                   </div>
                   {p.bulk_qty && p.bulk_price && (
                     <span className="bulk-deal">
-                      Buy {p.bulk_qty}+ at {money(Number(p.bulk_price))}
+                      Buy {p.bulk_qty}+ at {money(offerPrice(p,Number(p.bulk_qty)))}
                     </span>
                   )}
                   <small>
@@ -386,10 +387,7 @@ export function VendorWholesale({ vendorId }: { vendorId: string }) {
                     selected.reduce(
                       (sum, p) =>
                         sum +
-                        (qty[p.id] >= Number(p.bulk_qty || Infinity)
-                          ? Number(p.bulk_price || p.price)
-                          : Number(p.price)) *
-                          qty[p.id],
+                        offerPrice(p,qty[p.id]) * qty[p.id],
                       0,
                     ),
                   )}
@@ -750,7 +748,7 @@ function ReceiveWithMargin({
 const round2 = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 function VendorPaymentLedger({ data }: { data: any }) {
-  const [selected,setSelected]=useState("");
+  const [selected,setSelected]=useState(""),[activeSupplier,setActiveSupplier]=useState("");
   const payment=data.transactions.find((t:any)=>t.id===selected), order=data.requests.find((r:any)=>r.id===payment?.request_id), orderPayments=data.transactions.filter((t:any)=>t.request_id===payment?.request_id), orderReturns=data.returns.filter((r:any)=>r.request_id===payment?.request_id), orderRefunds=data.refunds.filter((r:any)=>r.request_id===payment?.request_id);
   const suppliers = [
     ...new Map(
@@ -762,64 +760,11 @@ function VendorPaymentLedger({ data }: { data: any }) {
   ] as any[];
   return (
     <div className="payment-ledger">
-      <section className="supplier-balances">
-        {suppliers.map((s) => {
-          const orders = data.requests.filter(
-              (r: any) =>
-                r.wholesaler_id === s.id && !["cancelled"].includes(r.status),
-            ),
-            summary = orders.reduce(
-              (a: any, r: any) => {
-                const f = orderFinancials(
-                  r,
-                  data.transactions,
-                  data.returns,
-                  data.refunds,
-                );
-                a.total += f.payable;
-                a.paid += f.paid;
-                a.balance += f.balance;
-                a.refund += f.refundDue;
-                return a;
-              },
-              { total: 0, paid: 0, balance: 0, refund: 0 },
-            );
-          return (
-            <article className="panel supplier-balance-card" key={s.id}>
-              <div>
-                <Package />
-                <span>
-                  <b>{s.name}</b>
-                  <small>{orders.length} orders</small>
-                </span>
-              </div>
-              <dl>
-                <div>
-                  <dt>Net purchases</dt>
-                  <dd>{money(summary.total)}</dd>
-                </div>
-                <div>
-                  <dt>Paid</dt>
-                  <dd>{money(summary.paid)}</dd>
-                </div>
-                <div>
-                  <dt>Pending</dt>
-                  <dd>{money(summary.balance)}</dd>
-                </div>
-                {summary.refund > 0 && (
-                  <div>
-                    <dt>Refund due</dt>
-                    <dd>{money(summary.refund)}</dd>
-                  </div>
-                )}
-              </dl>
-            </article>
-          );
-        })}
-      </section>
+      <section className="panel padded"><h2>Wholesale partners</h2><p>Select a wholesaler to view recent activity and transaction history.</p><div className="admin-business-list">{suppliers.map((partner:any)=>{const orders=data.requests.filter((r:any)=>r.wholesaler_id===partner.id&&!['cancelled'].includes(r.status));const summary=orders.reduce((a:any,r:any)=>{const f=orderFinancials(r,data.transactions,data.returns,data.refunds);a.total+=f.payable;a.paid+=f.paid;a.balance+=f.balance;return a},{total:0,paid:0,balance:0});return <button type="button" className="admin-business-row" key={partner.id} aria-expanded={activeSupplier===partner.id} onClick={()=>{setActiveSupplier(activeSupplier===partner.id?'':partner.id);setSelected('')}}><span><b>{partner.name}</b><small>{orders.length} orders · Paid {money(summary.paid)} · Purchases {money(summary.total)}</small></span><b>{money(summary.balance)} pending</b><span>View →</span></button>})}{!suppliers.length&&<p className="empty-inline">No wholesale partners with orders yet.</p>}</div></section>
+      {activeSupplier&&<><section className="panel padded"><h2>Recent activity · {suppliers.find((p:any)=>p.id===activeSupplier)?.name}</h2>{data.requests.filter((r:any)=>r.wholesaler_id===activeSupplier).slice(0,3).map((r:any)=><div className="record-row" key={r.id}><b>Order #{r.id.slice(0,8).toUpperCase()} · {r.status}</b><small>{new Date(Number(r.created_at)).toLocaleString('en-IN')}</small></div>)}{data.transactions.filter((t:any)=>t.wholesaler_id===activeSupplier).slice(0,3).map((t:any)=><div className="record-row" key={t.id}><b>Payment {money(Number(t.amount))} · {t.payment_status}</b><small>{new Date(Number(t.created_at)).toLocaleString('en-IN')}</small></div>)}</section>
       <section className="order-payment-list">
         {data.requests
-          .filter((r: any) => !["cancelled"].includes(r.status))
+          .filter((r: any) => r.wholesaler_id===activeSupplier && !["cancelled"].includes(r.status))
           .map((r: any) => {
             const f = orderFinancials(
               r,
@@ -886,7 +831,7 @@ function VendorPaymentLedger({ data }: { data: any }) {
             </tr>
           </thead>
           <tbody>
-            {data.transactions.map((payment: any) => (
+            {data.transactions.filter((p:any)=>p.wholesaler_id===activeSupplier).map((payment: any) => (
               <tr key={payment.id} className="return-row" tabIndex={0} onClick={()=>setSelected(payment.id)} onKeyDown={e=>{if(e.key==="Enter"){setSelected(payment.id)}}}>
                 <td>
                   {new Date(Number(payment.created_at)).toLocaleString(
@@ -918,7 +863,8 @@ function VendorPaymentLedger({ data }: { data: any }) {
           <p className="empty-inline">No payments recorded yet.</p>
         )}
       </section>
-      {payment&&<section className="panel padded return-details"><div className="panel-heading"><div><h2>Transaction #{payment.id.slice(0,8).toUpperCase()}</h2><p>{payment.business_name} · Order #{payment.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={()=>setSelected("")}>Close</button></div><p><b>Payment:</b> {money(Number(payment.amount))} · {payment.payment_status} · {payment.reference||"No reference"}</p><p><b>Order:</b> {order?.status||"Unavailable"} · {order?.items?.map((i:any)=>i.name+" × "+i.quantity).join(", ")}</p><h3>Payment history</h3>{orderPayments.map((p:any)=><div className="record-row" key={p.id}><b>{money(Number(p.amount))} · {p.payment_status}</b><small>{new Date(Number(p.created_at)).toLocaleString("en-IN")} · {p.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{orderReturns.map((r:any)=><div className="record-row" key={r.id}><b>{r.product_name} · {r.status}</b><small>{r.quantity} {r.unit} × {money(Number(r.unit_price))}</small></div>)}{orderRefunds.map((r:any)=><div className="record-row" key={r.id}><b>Refund {money(Number(r.amount))} · {r.status}</b><small>{r.reason}</small></div>)}</section>}
+      <section className="panel padded"><h2>Returns and refunds</h2>{data.returns.filter((x:any)=>x.wholesaler_id===activeSupplier).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.quantity} {x.unit} · {x.reason}</small></div>)}{data.refunds.filter((x:any)=>x.wholesaler_id===activeSupplier).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}{!data.returns.some((x:any)=>x.wholesaler_id===activeSupplier)&&!data.refunds.some((x:any)=>x.wholesaler_id===activeSupplier)&&<p>No returns or refunds for this wholesaler.</p>}</section>
+      </>}{payment&&<section className="panel padded return-details"><div className="panel-heading"><div><h2>Transaction #{payment.id.slice(0,8).toUpperCase()}</h2><p>{payment.business_name} · Order #{payment.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={()=>setSelected("")}>Close</button></div><p><b>Payment:</b> {money(Number(payment.amount))} · {payment.payment_status} · {payment.reference||"No reference"}</p><p><b>Order:</b> {order?.status||"Unavailable"} · {order?.items?.map((i:any)=>i.name+" × "+i.quantity).join(", ")}</p><h3>Payment history</h3>{orderPayments.map((p:any)=><div className="record-row" key={p.id}><b>{money(Number(p.amount))} · {p.payment_status}</b><small>{new Date(Number(p.created_at)).toLocaleString("en-IN")} · {p.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{orderReturns.map((r:any)=><div className="record-row" key={r.id}><b>{r.product_name} · {r.status}</b><small>{r.quantity} {r.unit} × {money(Number(r.unit_price))}</small></div>)}{orderRefunds.map((r:any)=><div className="record-row" key={r.id}><b>Refund {money(Number(r.amount))} · {r.status}</b><small>{r.reason}</small></div>)}</section>}
       {!data.requests.length && (
         <section className="panel padded">
           <p>No supplier orders or payments yet.</p>
