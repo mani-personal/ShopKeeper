@@ -17,7 +17,7 @@ export function receiptMarkup(sale, settings, demo = false) {
     const row = (label, value, cls = '') => '<div class="receipt-summary ' + cls + '"><span>' + e(label) + '</span><strong>' + e(value) + '</strong></div>';
     const lines = sale.items.map((p, i) => {
         const reduction = sale.productDiscount !== undefined ? productDiscount(p) : 0;
-        const metadata = [p.weight?.trim(), p.barcode?.trim() ? 'SKU ' + p.barcode.trim() : ''].filter(Boolean).join(' · ');
+        const metadata = p.weight?.trim() ?? '';
         return '<tbody class="receipt-item"><tr class="receipt-item-title"><td colspan="6">' + e(i + 1) + '. ' + e(p.name) + (metadata ? '<small>' + e(metadata) + '</small>' : '') + '</td></tr>' +
             '<tr class="receipt-values"><td>' + e(p.unit) + '</td><td class="numeric receipt-item-qty">' + e(p.qty) + '</td><td class="numeric">' + (mrp(p) === null ? '—' : e(amount(mrp(p)))) + '</td><td class="numeric">' + e(amount(p.price)) + '</td><td class="numeric receipt-tax">—</td><td class="numeric">' + e(amount(p.price * p.qty)) + '</td></tr>' +
             (reduction ? '<tr><td colspan="6" class="receipt-item-discount">Discount ' + e(rupees(reduction)) + ' × ' + e(p.qty) + ' = ' + e(rupees(reduction * p.qty)) + '</td></tr>' : '') + '</tbody>';
@@ -25,7 +25,7 @@ export function receiptMarkup(sale, settings, demo = false) {
     return '<article class="receipt-document"><header><h1>' + e(settings.name) + '</h1>' +
         (settings.address ? '<p class="receipt-address">' + e(settings.address) + '</p>' : '') +
         (settings.phone ? '<p>Phone: ' + e(settings.phone) + '</p>' : '') +
-        '<h2>BILL RECEIPT</h2></header><section class="receipt-meta"><p><b>Bill No:</b> ' + e(sale.id) + '</p><p><b>Date:</b> ' + e(new Date(sale.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })) + '</p>' +
+        '<h2>BILL RECEIPT</h2></header><section class="receipt-meta"><p><b>Bill No:</b> ' + e(sale.receiptNumber ?? '—') + '</p><p><b>Date:</b> ' + e(new Date(sale.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })) + '</p>' +
         (sale.customer ? '<p><b>Customer:</b> ' + e(sale.customer) + '</p>' : '') + '</section>' +
         (demo ? '<p class="receipt-demo">DEMO — NOT A REAL TRANSACTION</p>' : '') +
         '<table class="receipt-lines"><colgroup><col class="receipt-product-col"><col class="receipt-qty-col"><col class="receipt-mrp-col"><col class="receipt-rate-col"><col class="receipt-tax-col"><col class="receipt-total-col"></colgroup><thead><tr><th>Product</th><th class="numeric">Qty</th><th class="numeric">MRP</th><th class="numeric">Rate</th><th class="numeric receipt-tax">Tax</th><th class="numeric">Total</th></tr></thead>' + lines + '</table>' +
