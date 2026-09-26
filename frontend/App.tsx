@@ -1561,15 +1561,11 @@ export default function Home() {
                         <Package size={24} />
                       </span>
                       <b>{p.name}</b>
-                      {p.specialDiscount && productDiscount(p,s.settings)>0 && <span className="badge green">Special discount</span>}
                       <small>
                         {p.unit} · {p.stock} in stock
                       </small>
                       <div>
                         <strong>{money(netPrice(p, s.settings))}</strong>
-                        {productDiscount(p, s.settings) > 0 && (
-                          <small>{money(productDiscount(p, s.settings))} off</small>
-                        )}
                         <Plus size={18} />
                       </div>
                     </button>
@@ -1620,28 +1616,20 @@ export default function Home() {
                     )}
                     {cartItems.map((p) => (
                       <div className="cart-line" key={p.id}>
-                        <div>
+                        <div className="pos-row-product">
                           <b>{p.name}</b>
-                          {p.specialDiscount && productDiscount(p,s.settings)>0 && <span className="badge green">Special discount</span>}
-                          <small>
-                            {money(netPrice(p, s.settings))} each
-                            {productDiscount(p, s.settings) > 0 &&
-                              " · " + money(productDiscount(p, s.settings)) + " off"}
-                          </small>
-                          <label className="sale-line-field">Quantity
-                            <input type="number" min="1" max={p.id.startsWith('manual:')?1000000:s.products.find((x) => x.id === p.id)?.stock || 1} step="1" value={p.qty}
+                          {p.weight && <small>{p.weight}</small>}
+                        </div>
+                        <div className="pos-row-quantity">
+                          <label className="sale-line-field">Qty
+                            <input aria-label={"Quantity for " + p.name} type="number" min="1" max={p.id.startsWith('manual:')?1000000:s.products.find((x) => x.id === p.id)?.stock || 1} step="1" value={p.qty}
                               onChange={(e) => { const value = Number(e.target.value); const available = p.id.startsWith('manual:')?1000000:s.products.find((x) => x.id === p.id)?.stock || 0;
                                 if (Number.isInteger(value) && value >= 1 && value <= available)
                                   setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, qty: value } : row)); }} />
                           </label>
-                          <label className="sale-line-field">Selling price (₹)
-                            <input type="number" min="0" max={p.mrp ?? 10000000} step=".01" value={netPrice(p, s.settings)}
-                              onChange={(e) => { if (e.target.value === '') return; const value = Number(e.target.value);
-                                if (Number.isFinite(value) && value >= 0 && value <= (p.mrp ?? 10000000) && Math.round(value * 100) === value * 100)
-                                  setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, unitPrice: value } : row)); }} />
-                          </label>
-                          <div className="quantity">
+                          <div className="quantity pos-row-stepper">
                             <button
+                              type="button"
                               aria-label={"Decrease " + p.name}
                               onClick={() =>
                                 setCart((c) =>
@@ -1657,8 +1645,8 @@ export default function Home() {
                             >
                               <Minus size={13} />
                             </button>
-                            {p.qty}
                             <button
+                              type="button"
                               aria-label={"Increase " + p.name}
                               onClick={() => p.id.startsWith('manual:')?setCart(rows=>rows.map(row=>row.id===p.id?{...row,qty:Math.min(1000000,row.qty+1)}:row)):add(p)}
                             >
@@ -1666,9 +1654,17 @@ export default function Home() {
                             </button>
                           </div>
                         </div>
-                        <div>
+                        <label className="sale-line-field pos-row-price">Selling price (₹)
+                          <input aria-label={"Selling price for " + p.name} type="number" min="0" max={p.mrp ?? 10000000} step=".01" value={netPrice(p, s.settings)}
+                            onChange={(e) => { if (e.target.value === '') return; const value = Number(e.target.value);
+                              if (Number.isFinite(value) && value >= 0 && value <= (p.mrp ?? 10000000) && Math.round(value * 100) === value * 100)
+                                setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, unitPrice: value } : row)); }} />
+                        </label>
+                        <div className="pos-row-total">
+                          <small>Line total</small>
                           <b>{money(netPrice(p, s.settings) * p.qty)}</b>
                           <button
+                            type="button"
                             className="icon-button"
                             aria-label={"Remove " + p.name}
                             onClick={() =>
@@ -1686,11 +1682,11 @@ export default function Home() {
                     <b>{money(subtotal)}</b>
                   </div>
                   <div className="bill-total">
-                    <span>Product discounts</span>
-                    <b>−{money(itemSavings)}</b>
+                    <span>Discount</span>
+                    <b>−{money(roundMoney(itemSavings + discount))}</b>
                   </div>
                   <label className="bill-total">
-                    Extra bill discount (₹)
+                    Add bill discount (₹)
                     <input
                       type="number"
                       min="0"
