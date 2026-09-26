@@ -14,8 +14,8 @@ export function csvCell(value) {
   const string = String(value ?? "").replace(/^\s*([=+@\-])/, "'$&");
   return '"' + string.replaceAll('"', '""') + '"';
 }
-const retailColumns = ["Business ID","Product ID","Business","Business category","Product","Product category","Subcategory","Barcode / SKU","Weight","Unit","MRP","Selling price","Cost price","Quantity","Minimum stock","Target stock","Discount mode","Custom discount","Status"];
-const wholesaleColumns = ["Business ID","Product ID","Wholesale business","Business category","Product","Product category","Subcategory","Barcode / SKU","Weight","Unit","MRP","Wholesale price","Available stock","Minimum order quantity","Bulk quantity","Bulk unit price","GST rate (%)","HSN / SAC","Description","Visible to vendors","Created","Last updated"];
+const retailColumns = ["Business ID","Product ID","Business","Business category","Product","Product category","Subcategory","Barcode / SKU","Weight","Unit","MRP","Selling price","Cost price","Quantity","Minimum stock","Target stock","Discount mode","Custom discount","Special discount","Status"];
+const wholesaleColumns = ["Business ID","Product ID","Wholesale business","Business category","Product","Product category","Subcategory","Barcode / SKU","Weight","Unit","MRP","Wholesale price","Available stock","Minimum order quantity","Bulk quantity","Bulk unit price","GST rate (%)","HSN / SAC","Description","Special discount (₹)","Special active","Visible to vendors","Created","Last updated"];
 const inventoryCSV = (columns,rows) => '\uFEFF' + [columns, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 export function registerBusinessRoutes(app, db) {
@@ -30,12 +30,12 @@ export function registerBusinessRoutes(app, db) {
       if (id && !stores.length) throw bad("Vendor not found.",404);
       for (const store of stores) {
         const state = JSON.parse(store.data);
-        for (const p of state.products || []) rows.push([store.id,p.id,state.settings.name, store.business_type, p.name, p.category,p.subcategory, p.barcode, p.weight, p.unit, p.mrp, p.price, p.cost, p.stock,p.min,p.target,p.discountMode,p.customDiscount, p.stock > 0 ? "In stock" : "Out of stock"]);
+        for (const p of state.products || []) rows.push([store.id,p.id,state.settings.name, store.business_type, p.name, p.category,p.subcategory, p.barcode, p.weight, p.unit, p.mrp, p.price, p.cost, p.stock,p.min,p.target,p.discountMode,p.customDiscount,p.specialDiscount ? "Yes" : "No", p.stock > 0 ? "In stock" : "Out of stock"]);
       }
     } else {
       if (id && !await db.prepare("SELECT 1 FROM wholesalers WHERE user_id=?").get(id)) throw bad("Wholesale seller not found.",404);
       const products = id ? await db.prepare("SELECT p.*,w.business_name,w.business_category FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id WHERE w.user_id=? ORDER BY w.business_name,p.name").all(id) : await db.prepare("SELECT p.*,w.business_name,w.business_category FROM wholesale_products p JOIN wholesalers w ON w.user_id=p.wholesaler_id ORDER BY w.business_name,p.name").all();
-      for (const p of products) rows.push([p.wholesaler_id,p.id,p.business_name,p.business_category,p.name,p.category,p.subcategory,p.sku,p.weight,p.unit,p.mrp,p.price,p.stock,p.min_qty,p.bulk_qty,p.bulk_price,p.gst_rate,p.hsn_code,p.description,p.active ? "Yes" : "No",new Date(Number(p.created_at)).toISOString(),new Date(Number(p.updated_at)).toISOString()]);
+      for (const p of products) rows.push([p.wholesaler_id,p.id,p.business_name,p.business_category,p.name,p.category,p.subcategory,p.sku,p.weight,p.unit,p.mrp,p.price,p.stock,p.min_qty,p.bulk_qty,p.bulk_price,p.gst_rate,p.hsn_code,p.description,p.special_discount,p.special_active ? "Yes" : "No",p.active ? "Yes" : "No",new Date(Number(p.created_at)).toISOString(),new Date(Number(p.updated_at)).toISOString()]);
     }
     res.set("Content-Type", "text/csv; charset=utf-8");
     res.set("Content-Disposition", `attachment; filename="shopkeeper-${kind}-inventory.csv"`);
