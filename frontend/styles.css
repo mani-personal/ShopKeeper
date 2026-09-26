@@ -963,12 +963,18 @@ td b {
   overflow: auto;
   margin: 20px 0;
 }
-.pos-scan-tiles:not(:has(.cart-empty)){display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));align-content:start;gap:12px;padding:2px}
-.pos-scan-tiles .cart-line{min-width:0;min-height:164px;display:grid;grid-template-columns:minmax(0,1fr);gap:7px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);box-shadow:0 5px 18px rgba(0,0,0,.04)}
-.pos-scan-tiles .cart-line > div:last-child{flex-direction:row;align-items:center;justify-content:space-between}
-.pos-scan-tiles .sale-line-field input{max-width:120px}
+.pos-scan-rows{display:flex;flex-direction:column;min-width:0}
+.pos-scan-rows .cart-line{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding:12px 0}
+.pos-scan-rows .cart-line > div:first-child{min-width:0;flex:1}
+.pos-scan-rows .cart-line > div:last-child{flex-shrink:0}
+.pos-scan-rows .sale-line-field input{max-width:120px}
+.sales-date-filter,.manual-sale-form{display:flex;align-items:end;flex-wrap:wrap;gap:12px;padding:12px 18px}
+.sales-date-filter label,.manual-sale-form label{display:flex;flex-direction:column;gap:6px;font-size:13px;min-width:130px;flex:1}
+.sales-date-filter input,.manual-sale-form input{width:100%;min-width:0;padding:9px;border:1px solid var(--border);background:var(--card);color:inherit;border-radius:8px}
+.manual-sale-form{margin:12px 0;border:1px solid var(--border);border-radius:12px}
+.manual-sale-form small{width:100%}
 .admin-approval-grid{display:grid;gap:16px;min-width:0}
-@media(max-width:640px){.pos-scan-tiles:not(:has(.cart-empty)){grid-template-columns:1fr}}
+@media(max-width:640px){.pos-scan-rows .cart-line{align-items:flex-start}.pos-scan-rows .cart-line > div:last-child{align-self:flex-start}.manual-sale-form label{min-width:calc(50% - 6px)}.sales-date-filter label{min-width:calc(50% - 6px)}}
 .cart-empty {
   min-height: 210px;
   display: flex;
