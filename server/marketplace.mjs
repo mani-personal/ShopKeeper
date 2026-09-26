@@ -27,6 +27,7 @@ const whole = (value, min = 0, max = 10000000) =>
   Number.isInteger(Number(value)) &&
   Number(value) >= min &&
   Number(value) <= max;
+const offerPrice = (p, quantity) => roundMoney((quantity >= Number(p.bulk_qty || Infinity) && p.bulk_price != null ? Number(p.bulk_price) : Number(p.price)) - (p.special_active ? Number(p.special_discount) : 0));
 const seller = (user) => {
   if (user.role !== "wholesale")
     throw bad("Wholesale seller access required.", 403);
@@ -292,7 +293,9 @@ export function registerMarketplaceRoutes(app, db) {
           ? p.description.trim().slice(0, 500)
           : "",
       hsnCode = typeof p.hsnCode === "string" ? p.hsnCode.trim().slice(0, 20) : "",
-      gstRate = Number(p.gstRate ?? 0);
+      gstRate = Number(p.gstRate ?? 0),
+      specialActive = p.specialActive === true,
+      specialDiscount = Number(p.specialDiscount ?? 0);
     if (
       !name ||
       subcategory.length > 100 ||
@@ -313,14 +316,16 @@ export function registerMarketplaceRoutes(app, db) {
         (!amount(p.bulkPrice) ||
           Number(p.bulkPrice) <= 0 ||
           Number(p.bulkPrice) >= Number(p.price))) ||
-      ![0, 5, 12, 18, 28].includes(gstRate)
+      ![0, 5, 12, 18, 28].includes(gstRate) ||
+      !amount(specialDiscount) ||
+      (specialActive && (specialDiscount <= 0 || specialDiscount >= Number(p.price) || (p.bulkPrice !== '' && p.bulkPrice != null && specialDiscount >= Number(p.bulkPrice))))
     )
       throw bad("Check product, MRP, MOQ, bulk price and stock.");
     if (sku && await db.prepare("SELECT id FROM wholesale_products WHERE wholesaler_id=? AND sku=? AND id<>?").get(req.wholesalerId, sku, id))
       throw bad("This barcode already belongs to another wholesale pack size. Use a unique item code for each product.");
     await db
       .prepare(
-        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate,subcategory,weight) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate,subcategory=EXCLUDED.subcategory,weight=EXCLUDED.weight WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
+        `INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,hsn_code,gst_rate,subcategory,weight,special_discount,special_active) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,sku=EXCLUDED.sku,unit=EXCLUDED.unit,price=EXCLUDED.price,stock=EXCLUDED.stock,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at,category=EXCLUDED.category,description=EXCLUDED.description,mrp=EXCLUDED.mrp,min_qty=EXCLUDED.min_qty,bulk_qty=EXCLUDED.bulk_qty,hsn_code=EXCLUDED.hsn_code,gst_rate=EXCLUDED.gst_rate,subcategory=EXCLUDED.subcategory,weight=EXCLUDED.weight,special_discount=EXCLUDED.special_discount,special_active=EXCLUDED.special_active WHERE wholesale_products.wholesaler_id=EXCLUDED.wholesaler_id`,
       )
       .run(
         id,
@@ -343,6 +348,8 @@ export function registerMarketplaceRoutes(app, db) {
         gstRate,
         subcategory,
         weight,
+        specialDiscount,
+        specialActive,
       );
     await recordActivity(db, {
       actorId: req.user.id,
@@ -392,10 +399,7 @@ export function registerMarketplaceRoutes(app, db) {
         throw bad(
           `${p.name} requires at least ${p.min_qty} and has ${p.stock} available.`,
         );
-      total +=
-        quantity >= Number(p.bulk_qty || Infinity) && p.bulk_price != null
-          ? quantity * Number(p.bulk_price)
-          : quantity * Number(p.price);
+      total += quantity * offerPrice(p,quantity);
     }
     if (total < Number(products[0].min_order))
       throw bad("Order does not meet the wholesaler minimum.");
@@ -422,10 +426,7 @@ export function registerMarketplaceRoutes(app, db) {
       for (const item of req.body.items) {
         const p = products.find((x) => x.id === item.productId),
           quantity = Number(item.quantity),
-          unitPrice =
-            quantity >= Number(p.bulk_qty || Infinity) && p.bulk_price != null
-              ? Number(p.bulk_price)
-              : Number(p.price);
+          unitPrice = offerPrice(p,quantity);
         await db
           .prepare(
             "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price,hsn_code,gst_rate,weight) VALUES(?,?,?,?,?,?,?)",
@@ -862,7 +863,7 @@ export function registerMarketplaceRoutes(app, db) {
             stock: line.quantity,
             min: 5,
             target: Math.max(20, line.quantity),
-            discountMode: "auto",
+            discountMode: "inherit",
             discountBasis: "cost",
             customDiscount: 0,
           };
