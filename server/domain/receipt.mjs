@@ -1,4 +1,3 @@
-import { productDiscount } from './store.mjs';
 export const escapeReceipt = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const amount = (n) => Number.isFinite(n) ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
 const rupees = (n) => '₹ ' + amount(n);
@@ -11,16 +10,12 @@ export function receiptMarkup(sale, settings, demo = false) {
     const productSavings = sale.items.reduce((sum, p) => sum + (mrp(p) === null ? 0 : (mrp(p) - p.price) * p.qty), 0);
     const discount = Math.max(0, subtotal - Number(sale.total));
     const saved = discount + productSavings;
-    const productDiscountTotal = sale.productDiscount ?? 0;
-    const billDiscount = sale.productDiscount === undefined ? sale.discount : (sale.billDiscount ?? sale.discount - sale.productDiscount);
     const totalQty = sale.items.reduce((sum, p) => sum + p.qty, 0);
     const row = (label, value, cls = '') => '<div class="receipt-summary ' + cls + '"><span>' + e(label) + '</span><strong>' + e(value) + '</strong></div>';
     const lines = sale.items.map((p, i) => {
-        const reduction = sale.productDiscount !== undefined ? productDiscount(p) : 0;
         const metadata = p.weight?.trim() ?? '';
         return '<tbody class="receipt-item"><tr class="receipt-item-title"><td colspan="6">' + e(i + 1) + '. ' + e(p.name) + (metadata ? '<small>' + e(metadata) + '</small>' : '') + '</td></tr>' +
-            '<tr class="receipt-values"><td>' + e(p.unit) + '</td><td class="numeric receipt-item-qty">' + e(p.qty) + '</td><td class="numeric">' + (mrp(p) === null ? '—' : e(amount(mrp(p)))) + '</td><td class="numeric">' + e(amount(p.price)) + '</td><td class="numeric receipt-tax">—</td><td class="numeric">' + e(amount(p.price * p.qty)) + '</td></tr>' +
-            (reduction ? '<tr><td colspan="6" class="receipt-item-discount">Discount ' + e(rupees(reduction)) + ' × ' + e(p.qty) + ' = ' + e(rupees(reduction * p.qty)) + '</td></tr>' : '') + '</tbody>';
+            '<tr class="receipt-values"><td>' + e(p.unit) + '</td><td class="numeric receipt-item-qty">' + e(p.qty) + '</td><td class="numeric">' + (mrp(p) === null ? '—' : e(amount(mrp(p)))) + '</td><td class="numeric">' + e(amount(p.price)) + '</td><td class="numeric receipt-tax">—</td><td class="numeric">' + e(amount(p.price * p.qty)) + '</td></tr></tbody>';
     }).join('');
     return '<article class="receipt-document"><header><h1>' + e(settings.name) + '</h1>' +
         (settings.address ? '<p class="receipt-address">' + e(settings.address) + '</p>' : '') +
@@ -30,7 +25,7 @@ export function receiptMarkup(sale, settings, demo = false) {
         (demo ? '<p class="receipt-demo">DEMO — NOT A REAL TRANSACTION</p>' : '') +
         '<table class="receipt-lines"><colgroup><col class="receipt-product-col"><col class="receipt-qty-col"><col class="receipt-mrp-col"><col class="receipt-rate-col"><col class="receipt-tax-col"><col class="receipt-total-col"></colgroup><thead><tr><th>Product</th><th class="numeric">Qty</th><th class="numeric">MRP</th><th class="numeric">Rate</th><th class="numeric receipt-tax">Tax</th><th class="numeric">Total</th></tr></thead>' + lines + '</table>' +
         '<section class="receipt-totals">' + row('SUM', rupees(subtotal), 'receipt-sum') + row('Total Qty', String(totalQty)) + row('MRP total' + (allMrp ? '' : ' *'), rupees(mrpTotal)) +
-        (sale.productDiscount !== undefined ? row('Product discount', '− ' + rupees(productDiscountTotal)) + row('Bill discount', '− ' + rupees(billDiscount)) : row('Discount', '− ' + rupees(discount))) +
+        row('Discount', '− ' + rupees(discount)) +
         row('Round off', rupees(0)) + row('Total Amount', rupees(sale.total), 'receipt-grand') + row('Customer saved' + (allMrp ? ' vs MRP' : ' (known MRP)'), rupees(saved), 'receipt-savings') +
         (allMrp ? '' : '<p class="receipt-mrp-note">* Missing MRP uses selling price in the MRP total. Savings include recorded MRP and discounts only.</p>') + '</section>' +
         '<section class="receipt-payment"><div class="receipt-payment-heading"><b>Pay Mode Received</b><b>Amount</b></div>' + row(sale.payment, rupees(sale.total)) + '</section>' +
