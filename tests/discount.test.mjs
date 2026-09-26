@@ -42,3 +42,19 @@ test('Checkout price edits apply only to this bill and cannot exceed MRP',()=>{
  for (const unitPrice of [131,-1,105.001])
   assert.throws(()=>mutate(s,{type:'sale',id:'bad-'+unitPrice,items:[{id,qty:1,unitPrice}],discount:0,payment:'Cash'}));
 });
+test('store default discount changes inherited items while preserving explicit overrides and receipt snapshots',()=>{
+ const s=initial();
+ mutate(s,{type:'settings',name:'Store',phone:'',address:'',lowPercent:20,discountMode:'custom',customDiscount:4});
+ mutate(s,{type:'product',product:product(60,{discountMode:'inherit',specialDiscount:true})});
+ const id=s.products[0].id;
+ assert.equal(productDiscount(s.products[0],s.settings),4);
+ mutate(s,{type:'sale',id:'discounted',items:[{id,qty:2}],discount:0,payment:'Cash'});
+ assert.equal(s.sales[0].total,112);
+ assert.equal(s.sales[0].productDiscount,8);
+ assert.equal(s.sales[0].items[0].specialDiscount,true);
+ mutate(s,{type:'settings',name:'Store',phone:'',address:'',lowPercent:20,discountMode:'none',customDiscount:0});
+ assert.equal(productDiscount(s.products[0],s.settings),0);
+ assert.equal(productDiscount(s.sales[0].items[0]),4,'an old receipt keeps its charged discount');
+ mutate(s,{type:'product',product:{...s.products[0],discountMode:'auto',specialDiscount:false}});
+ assert.equal(productDiscount(s.products[0],s.settings),3,'explicit product mode overrides global setting');
+});
