@@ -22,7 +22,7 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
   const reduction=sale.productDiscount!==undefined?productDiscount(p):0;
   const metadata=[p.weight?.trim(),p.barcode?.trim()?'SKU '+p.barcode.trim():''].filter(Boolean).join(' · ');
   return '<tbody class="receipt-item"><tr class="receipt-item-title"><td colspan="6">'+e(i+1)+'. '+e(p.name)+(metadata?'<small>'+e(metadata)+'</small>':'')+'</td></tr>'+ 
-   '<tr class="receipt-values"><td>'+e(p.unit)+'</td><td class="numeric">'+e(p.qty)+'</td><td class="numeric">'+(mrp(p)===null?'—':e(amount(mrp(p)!)))+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric receipt-tax">—</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr>'+ 
+   '<tr class="receipt-values"><td>'+e(p.unit)+'</td><td class="numeric receipt-item-qty">'+e(p.qty)+'</td><td class="numeric">'+(mrp(p)===null?'—':e(amount(mrp(p)!)))+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric receipt-tax">—</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr>'+ 
    (reduction?'<tr><td colspan="6" class="receipt-item-discount">Discount '+e(rupees(reduction))+' × '+e(p.qty)+' = '+e(rupees(reduction*p.qty))+'</td></tr>':'')+'</tbody>';
  }).join('');
  return '<article class="receipt-document"><header><h1>'+e(settings.name)+'</h1>'+
@@ -63,6 +63,7 @@ export function receiptCSS(paper:ReceiptPaper):string{
  .receipt-item-title td{padding-top:6px;font-weight:700;overflow-wrap:anywhere}
  .receipt-item-title small{display:block;font-size:9px;font-weight:400}
  .receipt-values td{padding-bottom:5px;border-bottom:1px solid #aaa}
+ .receipt-item-qty{font-weight:700}
  .receipt-item-discount{text-align:right;font-size:9px;padding:2px!important}
  .receipt-item{break-inside:avoid;page-break-inside:avoid}
  .receipt-lines thead{display:table-header-group}
