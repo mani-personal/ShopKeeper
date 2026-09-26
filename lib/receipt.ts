@@ -17,8 +17,8 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
  const row=(label:string,value:string,cls='')=>'<div class="receipt-summary '+cls+'"><span>'+e(label)+'</span><strong>'+e(value)+'</strong></div>';
  const lines=sale.items.map((p,i)=>{
   const metadata=p.weight?.trim()??'';
-  return '<tbody class="receipt-item"><tr class="receipt-item-title"><td colspan="4">'+e(i+1)+'. '+e(p.name)+(metadata?'<small>'+e(metadata)+'</small>':'')+'</td></tr>'+ 
-   '<tr class="receipt-values"><td class="numeric receipt-item-qty">'+e(p.qty)+'</td><td class="numeric">'+(mrp(p)===null?'—':e(amount(mrp(p)!)))+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr></tbody>';
+  return '<tbody class="receipt-item"><tr class="receipt-item-row"><td class="receipt-product-name">'+e(i+1)+'. '+e(p.name)+(metadata?'<small>'+e(metadata)+'</small>':'')+'</td>'+ 
+   '<td class="numeric receipt-item-qty">'+e(p.qty)+'</td><td class="numeric">'+(mrp(p)===null?'—':e(amount(mrp(p)!)))+'</td><td class="numeric">'+e(amount(p.price))+'</td><td class="numeric">'+e(amount(p.price*p.qty))+'</td></tr></tbody>';
  }).join('');
  return '<article class="receipt-document"><header><h1>'+e(settings.name)+'</h1>'+
   (settings.address?'<p class="receipt-address">'+e(settings.address)+'</p>':'')+
@@ -26,7 +26,7 @@ export function receiptMarkup(sale:Sale,settings:State['settings'],demo=false):s
   '<h2>BILL RECEIPT</h2></header><section class="receipt-meta"><p><b>Bill No:</b> '+e(sale.receiptNumber??'—')+'</p><p><b>Date:</b> '+e(new Date(sale.date).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true}))+'</p>'+
   (sale.customer?'<p><b>Customer:</b> '+e(sale.customer)+'</p>':'')+'</section>'+ 
   (demo?'<p class="receipt-demo">DEMO — NOT A REAL TRANSACTION</p>':'')+
-  '<table class="receipt-lines"><colgroup><col class="receipt-qty-col"><col class="receipt-mrp-col"><col class="receipt-rate-col"><col class="receipt-total-col"></colgroup><thead><tr><th class="numeric">Qty</th><th class="numeric">MRP</th><th class="numeric">Rate</th><th class="numeric">Total</th></tr></thead>'+lines+'</table>'+ 
+  '<table class="receipt-lines"><colgroup><col class="receipt-product-col"><col class="receipt-qty-col"><col class="receipt-mrp-col"><col class="receipt-rate-col"><col class="receipt-total-col"></colgroup><thead><tr><th>Product</th><th class="numeric">Qty</th><th class="numeric">MRP</th><th class="numeric">Rate</th><th class="numeric">Total</th></tr></thead>'+lines+'</table>'+ 
   '<section class="receipt-totals">'+row('SUM',rupees(subtotal),'receipt-sum')+(allMrp?row('MRP total',rupees(mrpTotal)):'')+
   row('Discount','− '+rupees(discount))+
   row('Round off',rupees(0))+row('Total Amount',rupees(sale.total),'receipt-grand')+row('Customer saved'+(allMrp?' vs MRP':' (known MRP)'),rupees(saved),'receipt-savings')+'</section>'+ 
@@ -49,13 +49,13 @@ export function receiptCSS(paper:ReceiptPaper):string{
  .receipt-meta{margin:0 0 5px;overflow-wrap:anywhere}
  .receipt-meta p{margin:2px 0}
  .receipt-lines{font:inherit;width:100%;border-collapse:collapse;table-layout:fixed}
- .receipt-qty-col{width:13%}.receipt-mrp-col{width:25%}.receipt-rate-col{width:25%}.receipt-total-col{width:37%}
+ .receipt-product-col{width:30%}.receipt-qty-col{width:9%}.receipt-mrp-col{width:19%}.receipt-rate-col{width:19%}.receipt-total-col{width:23%}
  .receipt-lines th{padding:4px 1px;text-align:left;border-top:1px solid #000;border-bottom:1px solid #000;font-weight:700}
  .receipt-lines td{padding:2px 1px;vertical-align:top;overflow-wrap:anywhere}
  .receipt-lines .numeric{text-align:right;white-space:nowrap}
- .receipt-item-title td{padding-top:6px;font-weight:700;overflow-wrap:anywhere}
- .receipt-item-title small{display:block;font-size:9px;font-weight:400}
- .receipt-values td{padding-bottom:5px;border-bottom:1px solid #aaa}
+ .receipt-item-row td{padding-top:6px;padding-bottom:5px;border-bottom:1px solid #aaa}
+ .receipt-product-name{font-weight:700;overflow-wrap:anywhere}
+ .receipt-product-name small{display:block;font-size:9px;font-weight:400}
  .receipt-item-qty{font-weight:700}
  .receipt-item{break-inside:avoid;page-break-inside:avoid}
  .receipt-lines thead{display:table-header-group}
