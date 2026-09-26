@@ -255,7 +255,6 @@ export function WholesalePortal() {
             detail={data.profile.email || data.profile.business_name} logo={data.profile.logo_image}
             links={([
               {label: "My profile & settings", page: "Settings", icon: Settings},
-              {label: "Change password", page: "Account", icon: Settings},
               {label: "Payment history", page: "Transactions", icon: IndianRupee},
               {label: "Subscription", page: "Subscription", icon: ShoppingCart},
               {label: "Employees", page: "Employees", icon: Users},
@@ -317,7 +316,7 @@ export function WholesalePortal() {
             {message}
           </p>
         )}
-        {tab === "Overview" && (
+        {tab === "Overview" && data.permissions?.includes("dashboard") && (
           <>
             <Overview data={data} onLowStock={() => {setLowStockOnly(true); setTab("Products");}} />
             {data.permissions?.includes("reports") && <WholesaleReports data={data} />}
@@ -377,8 +376,8 @@ export function WholesalePortal() {
         {tab === "Subscription" && (
           <WholesaleSubscription data={data} reload={load} />
         )}{" "}
-        {tab === "Settings" && <><WholesaleSettings data={data} post={post} reload={load} /><AccountPassword /></>}{" "}
-        {tab === "Account" && <AccountPassword />}{" "}
+        {tab === "Settings" && <WholesaleSettings data={data} post={post} reload={load} />}{" "}
+        {tab === "Account" && <WholesaleSettings data={data} post={post} reload={load} />}{" "}
         {tab === "Support" && <Support />}
         {editing && (
           <div className="panel wholesale-editor">
@@ -434,6 +433,8 @@ export function WholesalePortal() {
                     f.get("bulkPrice") === "" ? "" : Number(f.get("bulkPrice")),
                   hsnCode: f.get("hsnCode"),
                   gstRate: Number(f.get("gstRate") || 0),
+                  specialActive: f.get("specialActive") === "on",
+                  specialDiscount: Number(f.get("specialDiscount") || 0),
                   active: f.get("active") === "on",
                 });
               }}
@@ -536,6 +537,8 @@ export function WholesalePortal() {
                   defaultValue={editing.bulk_price ?? ""}
                 />
               </label>
+              <label className="check-row"><input type="checkbox" name="specialActive" defaultChecked={editing.special_active === true}/>Feature as a special discount for vendors</label>
+              <label>Special discount per unit (₹)<input name="specialDiscount" type="number" min="0" step=".01" defaultValue={editing.special_discount ?? 0}/></label>
               <label>
                 HSN / SAC code
                 <input
@@ -1318,6 +1321,7 @@ function Products({ data, edit, lowStockOnly }: { data: any; edit: (x: any) => v
             <tr key={p.id}>
               <td data-label="Product">
                 <b>{p.name}</b>
+                {p.special_active && <span className="badge green">Special −{money(Number(p.special_discount))}</span>}
                 {p.description && (
                   <small className="block-text">{p.description}</small>
                 )}
@@ -1505,7 +1509,7 @@ function Transactions({
   reload: () => Promise<void>;
   setMessage: (value: string) => void;
 }) {
-  const [selected,setSelected]=useState("");
+  const [selected,setSelected]=useState(""),[activeVendor,setActiveVendor]=useState("");
   const current=data.transactions.find((x:any)=>x.id===selected),currentOrder=data.requests.find((x:any)=>x.id===current?.request_id);
   const vendors = [...new Set(data.requests.map((r: any) => r.vendor_id))];
   async function settle(path: string, body: any) {
@@ -1525,65 +1529,11 @@ function Transactions({
           Record new payments from Requests while packing or delivering.
         </b>
       </section>
-      <section className="supplier-balances">
-        {vendors.map((id: any) => {
-          const orders = data.requests.filter(
-              (r: any) =>
-                r.vendor_id === id && !["cancelled"].includes(r.status),
-            ),
-            name = orders[0]?.vendorName || "Vendor",
-            summary = orders.reduce(
-              (a: any, r: any) => {
-                const f = orderFinancials(
-                  r,
-                  data.transactions,
-                  data.returns,
-                  data.refunds,
-                );
-                a.payable += f.payable;
-                a.paid += f.paid;
-                a.balance += f.balance;
-                a.refund += f.refundDue;
-                return a;
-              },
-              { payable: 0, paid: 0, balance: 0, refund: 0 },
-            );
-          return (
-            <article className="panel supplier-balance-card" key={id}>
-              <div>
-                <Users />
-                <span>
-                  <b>{name}</b>
-                  <small>{orders.length} orders</small>
-                </span>
-              </div>
-              <dl>
-                <div>
-                  <dt>Net sales</dt>
-                  <dd>{money(summary.payable)}</dd>
-                </div>
-                <div>
-                  <dt>Received</dt>
-                  <dd>{money(summary.paid)}</dd>
-                </div>
-                <div>
-                  <dt>Pending</dt>
-                  <dd>{money(summary.balance)}</dd>
-                </div>
-                {summary.refund > 0 && (
-                  <div>
-                    <dt>Refund due</dt>
-                    <dd>{money(summary.refund)}</dd>
-                  </div>
-                )}
-              </dl>
-            </article>
-          );
-        })}
-      </section>
+      <section className="panel padded"><h2>Retail partners</h2><p>Open a retailer to see recent activity and full transaction history.</p><div className="admin-business-list">{vendors.map((id:any)=>{const orders=data.requests.filter((r:any)=>r.vendor_id===id&&!['cancelled'].includes(r.status));const latest=data.requests.find((r:any)=>r.vendor_id===id);const finance=orders.reduce((a:any,r:any)=>{const f=orderFinancials(r,data.transactions,data.returns,data.refunds);a.sales+=f.payable;a.paid+=f.paid;a.pending+=f.balance;return a},{sales:0,paid:0,pending:0});return <button type="button" className="admin-business-row" aria-expanded={activeVendor===id} key={id} onClick={()=>{setActiveVendor(activeVendor===id?'':id);setSelected('')}}><span><b>{latest?.vendorName||'Retailer'}</b><small>{orders.length} orders · Received {money(finance.paid)} · Sales {money(finance.sales)}</small></span><b>{money(finance.pending)} pending</b><span>View →</span></button>})}{!vendors.length&&<p className="empty-inline">No retailers with orders yet.</p>}</div></section>
+      {activeVendor&&<><section className="panel padded"><h2>Recent activity · {data.requests.find((r:any)=>r.vendor_id===activeVendor)?.vendorName}</h2>{data.requests.filter((r:any)=>r.vendor_id===activeVendor).slice(0,3).map((r:any)=><div className="record-row" key={r.id}><b>Order #{r.id.slice(0,8).toUpperCase()} · {r.status}</b><small>{paymentTime(r.created_at)}</small></div>)}{data.transactions.filter((t:any)=>t.vendor_id===activeVendor).slice(0,3).map((t:any)=><div className="record-row" key={t.id}><b>Payment {money(Number(t.amount))} · {t.payment_status}</b><small>{paymentTime(t.created_at)}</small></div>)}</section>
       <section className="order-payment-list">
         {data.requests
-          .filter((r: any) => !["cancelled"].includes(r.status))
+          .filter((r: any) => r.vendor_id===activeVendor && !["cancelled"].includes(r.status))
           .map((r: any) => {
             const f = orderFinancials(
               r,
@@ -1630,7 +1580,7 @@ function Transactions({
       </section>
       <section className="panel padded">
         <h2>Payment history</h2>
-        {data.transactions.map((t: any) => (
+        {data.transactions.filter((t:any)=>t.vendor_id===activeVendor).map((t: any) => (
           <div className="record-row return-row" key={t.id} role="button" tabIndex={0} onClick={()=>setSelected(t.id)} onKeyDown={e=>{if(e.key==="Enter")setSelected(t.id)}}>
             <div>
               <b>
@@ -1661,7 +1611,8 @@ function Transactions({
           <p className="empty-inline">No payments recorded yet.</p>
         )}
       </section>
-      {current&&<section className="panel padded return-details"><div className="panel-heading"><div><h2>Payment #{current.id.slice(0,8).toUpperCase()}</h2><p>{current.vendorName} · Order #{current.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={()=>setSelected("")}>Close</button></div><p>{paymentTime(current.created_at)} · {money(Number(current.amount))} · {current.payment_status} · {current.reference||"No reference"}</p><p>Order status: {currentOrder?.status||"Unavailable"}</p><h3>Order payments</h3>{data.transactions.filter((x:any)=>x.request_id===current.request_id).map((x:any)=><div className="record-row" key={x.id}><b>{money(Number(x.amount))} · {x.payment_status}</b><small>{paymentTime(x.created_at)} · {x.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{data.returns.filter((x:any)=>x.request_id===current.request_id).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.request_id===current.request_id&&t.id===x.transaction_id)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}</section>}
+      <section className="panel padded"><h2>Returns and refunds</h2>{data.returns.filter((x:any)=>x.vendor_id===activeVendor).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.quantity} {x.unit} · {x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.id===x.transaction_id&&t.vendor_id===activeVendor)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}{!data.returns.some((x:any)=>x.vendor_id===activeVendor)&&!data.refunds.some((x:any)=>data.transactions.some((t:any)=>t.id===x.transaction_id&&t.vendor_id===activeVendor))&&<p>No returns or refunds for this retailer.</p>}</section>
+      </>}{current&&<section className="panel padded return-details"><div className="panel-heading"><div><h2>Payment #{current.id.slice(0,8).toUpperCase()}</h2><p>{current.vendorName} · Order #{current.request_id.slice(0,8).toUpperCase()}</p></div><button className="btn" onClick={()=>setSelected("")}>Close</button></div><p>{paymentTime(current.created_at)} · {money(Number(current.amount))} · {current.payment_status} · {current.reference||"No reference"}</p><p>Order status: {currentOrder?.status||"Unavailable"}</p><h3>Order payments</h3>{data.transactions.filter((x:any)=>x.request_id===current.request_id).map((x:any)=><div className="record-row" key={x.id}><b>{money(Number(x.amount))} · {x.payment_status}</b><small>{paymentTime(x.created_at)} · {x.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{data.returns.filter((x:any)=>x.request_id===current.request_id).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.request_id===current.request_id&&t.id===x.transaction_id)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}</section>}
     </div>
   );
 }
@@ -2242,51 +2193,10 @@ function WholesaleSettings({
           </button>
         </form>
       </section>
-      <section className="panel padded">
-        <h2>Account security</h2>
-        <p>{data.profile.email}</p>
-        <PasswordChange />
-      </section>
+      <AccountPassword title="Account security" email={data.profile.email} />
     </div>
   );
 }
-function PasswordChange() {
-  return (
-    <form
-      className="form"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const f = new FormData(e.currentTarget);
-        await api("/api/auth/password", {
-          currentPassword: f.get("current"),
-          password: f.get("password"),
-        });
-        location.reload();
-      }}
-    >
-      <label>
-        Current password
-        <PasswordInput
-          name="current"
-          required
-          autoComplete="current-password"
-        />
-      </label>
-      <label>
-        New password
-        <PasswordInput
-          name="password"
-          required
-          minLength={12}
-          maxLength={128}
-          autoComplete="new-password"
-        />
-      </label>
-      <button className="btn primary">Change password</button>
-    </form>
-  );
-}
-
 export function WholesalerManagement() {
   const [rows, setRows] = useState<any[]>([]),
     [message, setMessage] = useState(""),
