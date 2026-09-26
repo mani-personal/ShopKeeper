@@ -58,7 +58,7 @@ async function visible(db, user, limit = 50) {
   }
   return db
     .prepare(
-      `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.vendor_id IN (SELECT vendor_id FROM memberships WHERE user_id=?) AND e.scope IN ('vendor','all') AND e.category IN ('sale','purchase','supplier_return','supplier_payment','order','quote','payment','return','subscription') ORDER BY e.created_at DESC LIMIT ?`,
+      `SELECT ${fields} FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.vendor_id IN (SELECT vendor_id FROM memberships WHERE user_id=?) AND e.scope IN ('vendor','all') AND e.category IN ('purchase','supplier_return','supplier_payment','order','quote','payment','return','subscription') ORDER BY e.created_at DESC LIMIT ?`,
     )
     .all(user.id, user.id, limit);
 }
