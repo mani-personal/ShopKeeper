@@ -11,6 +11,9 @@ test('Receipts escape names and present one combined discount without changing t
  assert(html.includes('BILL RECEIPT'));assert(html.includes('Bill No:'));assert(html.includes('Pay Mode Received'));
  assert(!html.includes('Total Qty')&&!html.includes('GST not recorded for this sale.')&&!html.includes('Tax details'));
  assert(!html.includes('>piece<')&&!html.includes('>Tax<'));
+ assert(html.includes('<th>Product</th>'));
+ assert.match(html,/<tr class="receipt-item-row"><td class="receipt-product-name">1\. Soap &lt;script&gt;alert\(1\)&lt;\/script&gt;<\/td><td class="numeric receipt-item-qty">2<\/td>/);
+ assert(!html.includes('receipt-item-title')&&!html.includes('colspan="4"'));
  assert(html.includes('receipt-lines'));assert(html.includes('numeric'));
 });
 test('Receipt layouts use printable widths without fixed-position content',()=>{
