@@ -1,10 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {receiptMarkup,receiptCSS} from '../server/domain/receipt.mjs';
 const sale={id:'sale-1',date:'2026-09-17T00:00:00Z',customer:'A < B',payment:'Cash',items:[{name:'Soap <script>alert(1)</script>',qty:2,unit:'piece',price:120}],discount:25,productDiscount:20,billDiscount:5,total:215};
-test('Receipts escape names and present separate discounts without changing totals',()=>{
+test('Receipts escape names and present one combined discount without changing totals',()=>{
  const html=receiptMarkup(sale,{name:'My & Store',address:'Hosur\nTamil Nadu',phone:'123'});
  assert(!html.includes('<script>'));assert(html.includes('&lt;script&gt;'));assert(html.includes('My &amp; Store'));
  assert(html.includes('240.00'));assert(html.includes('20.00'));assert(html.includes('5.00'));assert(html.includes('215.00'));
+ assert.equal((html.match(/<span>Discount<\/span>/g)||[]).length,1);
+ assert(html.includes('<span>Discount</span><strong>− ₹ 25.00</strong>'));
+ assert(!html.includes('Product discount')&&!html.includes('Bill discount'));
  assert(html.includes('BILL RECEIPT'));assert(html.includes('Bill No:'));assert(html.includes('Total Qty'));assert(html.includes('Pay Mode Received'));
  assert(html.includes('GST not recorded for this sale.'));assert(!html.includes('CGST 9%'));
  assert(html.includes('receipt-lines'));assert(html.includes('numeric'));
@@ -23,5 +26,6 @@ test('MRP and discount savings use the saved sale snapshot without double counti
  const previous=receiptMarkup(sale,{name:'Shop',address:'',phone:''});
  assert(previous.includes('Customer saved'));assert(previous.includes('MRP total *'));assert(previous.includes('Missing MRP uses selling price'));
  const discounted=receiptMarkup({...sale,items:[{...sale.items[0],mrp:150,cost:90,discountMode:'custom',customDiscount:10}]},{name:'Shop',address:'',phone:''});
- assert(discounted.includes('Discount ₹ 10.00 × 2 = ₹ 20.00'));
+ assert(!discounted.includes('Discount ₹ 10.00 × 2'));
+ assert(discounted.includes('<span>Discount</span><strong>− ₹ 25.00</strong>'));
 });
