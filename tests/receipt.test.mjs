@@ -8,8 +8,9 @@ test('Receipts escape names and present one combined discount without changing t
  assert.equal((html.match(/<span>Discount<\/span>/g)||[]).length,1);
  assert(html.includes('<span>Discount</span><strong>− ₹ 25.00</strong>'));
  assert(!html.includes('Product discount')&&!html.includes('Bill discount'));
- assert(html.includes('BILL RECEIPT'));assert(html.includes('Bill No:'));assert(html.includes('Total Qty'));assert(html.includes('Pay Mode Received'));
- assert(html.includes('GST not recorded for this sale.'));assert(!html.includes('CGST 9%'));
+ assert(html.includes('BILL RECEIPT'));assert(html.includes('Bill No:'));assert(html.includes('Pay Mode Received'));
+ assert(!html.includes('Total Qty')&&!html.includes('GST not recorded for this sale.')&&!html.includes('Tax details'));
+ assert(!html.includes('>piece<')&&!html.includes('>Tax<'));
  assert(html.includes('receipt-lines'));assert(html.includes('numeric'));
 });
 test('Receipt layouts use printable widths without fixed-position content',()=>{
@@ -24,7 +25,7 @@ test('MRP and discount savings use the saved sale snapshot without double counti
  assert(html.includes('>150.00</td>'));assert(html.includes('MRP total'));assert(html.includes('300.00'));
  assert(html.includes('Customer saved vs MRP'));assert(html.includes('85.00'));
  const previous=receiptMarkup(sale,{name:'Shop',address:'',phone:''});
- assert(previous.includes('Customer saved'));assert(previous.includes('MRP total *'));assert(previous.includes('Missing MRP uses selling price'));
+ assert(previous.includes('Customer saved'));assert(!previous.includes('MRP total *'));assert(!previous.includes('Missing MRP uses selling price'));
  const discounted=receiptMarkup({...sale,items:[{...sale.items[0],mrp:150,cost:90,discountMode:'custom',customDiscount:10}]},{name:'Shop',address:'',phone:''});
  assert(!discounted.includes('Discount ₹ 10.00 × 2'));
  assert(discounted.includes('<span>Discount</span><strong>− ₹ 25.00</strong>'));
