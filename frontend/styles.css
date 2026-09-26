@@ -7284,6 +7284,26 @@ body.printing-invoice .invoice-sheet td {
 .wholesale-expenses { display:grid; gap:16px; }
 .wholesale-expenses .record-row,.global-admin .record-row { flex-wrap:wrap; min-width:0; }
 @media(max-width:700px){.global-admin-header { padding:14px; flex-wrap:wrap; }.global-admin-header .actions { width:100%; justify-content:flex-end; }.global-admin > .page { padding:12px; }.admin-business-row { flex-wrap:wrap; }.admin-business-row > span:first-child { flex:1 1 100%; }.archive-filters { grid-template-columns:1fr 1fr; }.archive-filters label:first-child { grid-column:1/-1; }.wholesale-portal .page,.workspace .page { min-width:0; padding-inline:12px; }.wholesale-header nav { max-width:100vw; overflow-x:auto; }.transaction-ledger,.wholesale-expenses,.archive-orders { min-width:0; }.record-row { flex-wrap:wrap; }.admin-create-form,.expense-editor { grid-template-columns:1fr; }}
+
+/* Each scanned product is one compact bill row, including when its controls wrap. */
+.bill{container-type:inline-size}
+.pos-scan-rows .cart-line{display:grid;grid-template-columns:minmax(55px,1fr) 60px 88px minmax(70px,auto);gap:6px;align-items:center;min-width:0;padding:12px 0;border-radius:0;background:transparent;box-shadow:none}
+.pos-scan-rows .cart-line .pos-row-product{min-width:0;overflow-wrap:anywhere}
+.pos-scan-rows .cart-line .pos-row-quantity{min-width:0;display:flex;align-items:flex-end;gap:3px}
+.pos-scan-rows .cart-line .pos-row-price,.pos-scan-rows .cart-line .pos-row-quantity .sale-line-field{min-width:0;max-width:none;margin:0;display:flex;flex-direction:column;gap:4px}
+.pos-scan-rows .cart-line .sale-line-field input{width:100%;max-width:none;min-width:0;min-height:38px}
+.pos-scan-rows .cart-line .pos-row-stepper{margin:0;display:flex;flex-direction:column;gap:3px}
+.pos-scan-rows .cart-line .pos-row-stepper button{width:24px;height:18px}
+.pos-scan-rows .cart-line .pos-row-total{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:5px;min-width:0;text-align:right}
+.pos-scan-rows .cart-line .pos-row-total b{overflow-wrap:anywhere}
+.pos-scan-rows .cart-line .pos-row-total small{margin:0}
+@container (max-width:380px){
+  .pos-scan-rows .cart-line{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px 12px}
+  .pos-scan-rows .cart-line .pos-row-product{grid-column:1/-1}
+  .pos-scan-rows .cart-line .pos-row-quantity{grid-column:1}
+  .pos-scan-rows .cart-line .pos-row-price{grid-column:2}
+  .pos-scan-rows .cart-line .pos-row-total{grid-column:1/-1;flex-direction:row;justify-content:flex-end;align-items:center;gap:10px}
+}
 @media(max-width:700px){.pos-search-row .scan-strip { display:grid; grid-template-columns:auto minmax(0,1fr); }.pos-search-row .scan-strip .btn { justify-content:center; min-width:0; white-space:normal; }.pos-search-row .scan-strip .btn:first-of-type { grid-column:1; }.pos-search-row .scan-strip .btn:last-of-type { grid-column:2; }.global-admin .admin-subtabs { overflow-x:auto; flex-wrap:nowrap; }.global-admin .approval-stack .record-row .actions { width:100%; display:flex; flex-wrap:wrap; }.global-admin .approval-stack .table-scroll { max-width:100%; overflow-x:auto; }}
 .wholesale-header > .wholesale-identity {
   display: grid;
