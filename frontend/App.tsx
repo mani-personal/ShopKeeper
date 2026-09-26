@@ -202,7 +202,7 @@ const blank: Product = {
   barcode: "",
   category: "Staples",
   price: NaN,
-  discountMode: "none",
+  discountMode: "inherit",
   cost: NaN,
   stock: NaN,
   min: 10,
@@ -300,7 +300,6 @@ export default function Home() {
   const [logo, setLogo] = useState<string | null>(null);
   const isAdmin = role === "owner" || role === "admin";
   const allowedPage = (name: string) => {
-    if (role === "vendor" && name === "Dashboard" && permissions.includes("sales")) return true;
     if (role === "vendor" && name === "Supply hub")
       return ["purchases", "payments", "returns", "inventory"].some((permission) =>
         permissions.includes(permission),
@@ -608,7 +607,7 @@ export default function Home() {
       .filter((x) => x.name),
     subtotal = roundMoney(cartItems.reduce((t, p) => t + p.price * p.qty, 0)),
     itemSavings = roundMoney(
-      cartItems.reduce((t, p) => t + productDiscount(p) * p.qty, 0),
+      cartItems.reduce((t, p) => t + productDiscount(p, s.settings) * p.qty, 0),
     ),
     netSubtotal = roundMoney(subtotal - itemSavings);
   const posProducts =
@@ -659,8 +658,8 @@ export default function Home() {
               p.barcode,
               p.category,
               p.price,
-              productDiscount(p),
-              netPrice(p),
+              productDiscount(p, s.settings),
+              netPrice(p, s.settings),
               p.cost,
               p.stock,
               p.unit,
@@ -755,10 +754,10 @@ export default function Home() {
               <TableCell>{p.category}{p.subcategory && <small className="block-text">{p.subcategory}</small>}</TableCell>
               <TableCell>{p.weight || "—"}</TableCell>
               <TableCell>
-                <b>{money(netPrice(p))}</b>
-                {productDiscount(p) > 0 && (
+                <b>{money(netPrice(p, s.settings))}</b>
+                {productDiscount(p, s.settings) > 0 && (
                   <small style={{ display: "block" }}>
-                    {money(p.price)} − {money(productDiscount(p))} discount
+                    {money(p.price)} − {money(productDiscount(p, s.settings))} discount
                   </small>
                 )}
               </TableCell>
@@ -1557,13 +1556,14 @@ export default function Home() {
                         <Package size={24} />
                       </span>
                       <b>{p.name}</b>
+                      {p.specialDiscount && productDiscount(p,s.settings)>0 && <span className="badge green">Special discount</span>}
                       <small>
                         {p.unit} · {p.stock} in stock
                       </small>
                       <div>
-                        <strong>{money(netPrice(p))}</strong>
-                        {productDiscount(p) > 0 && (
-                          <small>{money(productDiscount(p))} off</small>
+                        <strong>{money(netPrice(p, s.settings))}</strong>
+                        {productDiscount(p, s.settings) > 0 && (
+                          <small>{money(productDiscount(p, s.settings))} off</small>
                         )}
                         <Plus size={18} />
                       </div>
@@ -1610,7 +1610,7 @@ export default function Home() {
                 </div>
                 <div className="bill-body">
                   {batchNotice && <p role="status" className="notice scan-batch-notice">{batchNotice}</p>}
-                  <div className="cart-items">
+                  <div className="cart-items pos-scan-tiles">
                     {!cartItems.length && (
                       <div className="cart-empty">
                         <ScanBarcode size={42} />
@@ -1622,10 +1622,11 @@ export default function Home() {
                       <div className="cart-line" key={p.id}>
                         <div>
                           <b>{p.name}</b>
+                          {p.specialDiscount && productDiscount(p,s.settings)>0 && <span className="badge green">Special discount</span>}
                           <small>
-                            {money(netPrice(p))} each
-                            {productDiscount(p) > 0 &&
-                              " · " + money(productDiscount(p)) + " off"}
+                            {money(netPrice(p, s.settings))} each
+                            {productDiscount(p, s.settings) > 0 &&
+                              " · " + money(productDiscount(p, s.settings)) + " off"}
                           </small>
                           <label className="sale-line-field">Quantity
                             <input type="number" min="1" max={s.products.find((x) => x.id === p.id)?.stock || 1} step="1" value={p.qty}
@@ -1634,7 +1635,7 @@ export default function Home() {
                                   setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, qty: value } : row)); }} />
                           </label>
                           <label className="sale-line-field">Selling price (₹)
-                            <input type="number" min="0" max={p.mrp ?? 10000000} step=".01" value={netPrice(p)}
+                            <input type="number" min="0" max={p.mrp ?? 10000000} step=".01" value={netPrice(p, s.settings)}
                               onChange={(e) => { if (e.target.value === '') return; const value = Number(e.target.value);
                                 if (Number.isFinite(value) && value >= 0 && value <= (p.mrp ?? 10000000) && Math.round(value * 100) === value * 100)
                                   setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, unitPrice: value } : row)); }} />
@@ -1666,7 +1667,7 @@ export default function Home() {
                           </div>
                         </div>
                         <div>
-                          <b>{money(netPrice(p) * p.qty)}</b>
+                          <b>{money(netPrice(p, s.settings) * p.qty)}</b>
                           <button
                             className="icon-button"
                             aria-label={"Remove " + p.name}
@@ -1961,6 +1962,8 @@ export default function Home() {
                       type: "settings",
                       ...Object.fromEntries(f),
                       lowPercent: Number(f.get("lowPercent")),
+                      discountMode: f.get("discountMode"),
+                      customDiscount: Number(f.get("customDiscount")),
                     })
                   )
                     toast.success("Store details saved");
@@ -1978,6 +1981,12 @@ export default function Home() {
                   Address
                   <textarea name="address" defaultValue={s.settings.address} />
                 </label>
+                <label>
+                  Default product discount
+                  <select name="discountMode" defaultValue={s.settings.discountMode ?? "none"}><option value="none">None</option><option value="auto">Automatic</option><option value="custom">Custom</option></select>
+                </label>
+                <label>Default custom discount per unit (₹)<input name="customDiscount" type="number" min="0" max="10000000" step=".01" defaultValue={s.settings.customDiscount ?? 0}/></label>
+                <p className="muted small">Applies to products set to Store default. Existing products with their own discount setting keep it.</p>
                 <label>
                   Low-stock alert (%)
                   <input
@@ -2511,11 +2520,11 @@ export default function Home() {
                 </label>
               ))}
               <label>
-                Product discount
+                Product discount (store default or override)
                 <Choice
                   label="Product discount mode"
-                  value={product.discountMode ?? "none"}
-                  options={["none", "auto", "custom"]}
+                  value={product.discountMode ?? "inherit"}
+                  options={["inherit", "none", "auto", "custom"]}
                   onChange={(value) =>
                     setProduct({
                       ...product,
@@ -2540,7 +2549,7 @@ export default function Home() {
                 />
               </label>
               <p className="muted small">
-                Cost = purchase cost; price = selling price. Up to ₹50: no
+                Store default follows Settings → Product discount. Cost = purchase cost; price = selling price. Up to ₹50: no
                 automatic discount; above ₹50 through ₹100: ₹3 off; above ₹100:
                 ₹10 off per unit. Custom replaces this rule, including for
                 low-cost items.
@@ -2570,12 +2579,13 @@ export default function Home() {
                   />
                 </label>
               )}
+              <label className="special-discount-toggle"><input type="checkbox" checked={product.specialDiscount===true} onChange={e=>setProduct({...product,specialDiscount:e.target.checked})}/> Feature as special discount on Point of sale</label>
               <div className="notice">
                 {Number.isFinite(product.price) &&
                 Number.isFinite(product.cost) ? (
                   <>
-                    Discount: {money(productDiscount(product))} · Customer pays:{" "}
-                    <b>{money(netPrice(product))}</b> per unit
+                    Discount: {money(productDiscount(product, s.settings))} · Customer pays:{" "}
+                    <b>{money(netPrice(product, s.settings))}</b> per unit
                   </>
                 ) : (
                   <>Enter cost and selling price to preview the discount.</>
