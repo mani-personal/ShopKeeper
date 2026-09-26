@@ -90,6 +90,7 @@ import {
   isLow,
   stockThreshold,
   stockTarget,
+  saleReceiptNumber,
 } from "@/lib/store";
 import { VendorSummary, businessTypes } from "@/lib/vendors";
 import { BillScanner } from "@/components/bill-scanner";
@@ -265,7 +266,10 @@ export default function Home() {
     [lowOnly, setLowOnly] = useState(false),
     [modal, setModal] = useState(""),
     [product, setProduct] = useState<Product>(blank),
-    [cart, setCart] = useState<{ id: string; qty: number; unitPrice?: number }[]>([]),
+    [cart, setCart] = useState<{ id: string; qty: number; unitPrice?: number; manual?: boolean; name?: string; cost?: number }[]>([]),
+    [manualRow, setManualRow] = useState(false),
+    [salesFrom, setSalesFrom] = useState(""),
+    [salesTo, setSalesTo] = useState(""),
     [barcode, setBarcode] = useState(""),
     [discount, setDiscount] = useState(0),
     [payment, setPayment] = useState("Cash"),
@@ -602,7 +606,7 @@ export default function Home() {
       (!lowOnly || isLow(p, s)),
   );
   const cartItems = cart
-      .map((x) => ({ ...s.products.find((p) => p.id === x.id)!, qty: x.qty,
+      .map((x) => ({ ...(x.manual ? { id:x.id,name:x.name!,barcode:'',category:'Manual sale',unit:'piece',stock:1000000,min:0,price:x.unitPrice!,cost:x.cost!,discountMode:'none' as const,customDiscount:0 } : s.products.find((p) => p.id === x.id)!), qty: x.qty,
         ...(x.unitPrice !== undefined ? { price: x.unitPrice, discountMode: 'none' as const, customDiscount: 0 } : {}) }))
       .filter((x) => x.name),
     subtotal = roundMoney(cartItems.reduce((t, p) => t + p.price * p.qty, 0)),
@@ -610,6 +614,7 @@ export default function Home() {
       cartItems.reduce((t, p) => t + productDiscount(p, s.settings) * p.qty, 0),
     ),
     netSubtotal = roundMoney(subtotal - itemSavings);
+  const visibleSales=s.sales.filter(x=>(!salesFrom||dateKey(x.date)>=salesFrom)&&(!salesTo||dateKey(x.date)<=salesTo));
   const posProducts =
     posMode === "Product name" && query.trim().length
       ? s.products.filter((p) =>
@@ -632,9 +637,9 @@ export default function Home() {
     const rows =
       kind === "sales"
         ? [
-            ["Invoice", "Date", "Customer", "Payment", "Total"],
+            ["Receipt number", "Date and time", "Customer", "Payment", "Total"],
             ...s.sales.map((x) => [
-              x.id,
+              saleReceiptNumber(s.sales,x),
               x.date,
               x.customer,
               x.payment,
@@ -1580,16 +1585,15 @@ export default function Home() {
                   !posProducts.length && (
                     <div className="empty-inline">No matching product.</div>
                   )}
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setProduct(blank);
-                    setModal("product");
-                  }}
-                >
-                  <Plus size={16} />
-                  Add other item without barcode
-                </button>
+                <button className="btn" type="button" onClick={() => setManualRow(x => !x)}><Plus size={16} />{manualRow?'Close manual entry':'Add manual sale row'}</button>
+                {manualRow && <form className="manual-sale-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget),name=String(f.get('name')??'').trim(),qty=Number(f.get('qty')),unitPrice=Number(f.get('unitPrice')),cost=Number(f.get('cost'));if(!name||name.length>=200||!Number.isInteger(qty)||qty<1||qty>1000000||!Number.isFinite(unitPrice)||unitPrice<=0||unitPrice>10000000||!Number.isFinite(cost)||cost<0||cost>10000000||roundMoney(unitPrice)!==unitPrice||roundMoney(cost)!==cost){toast.error('Enter a name, quantity, selling price and purchase cost.');return}setCart(rows=>[...rows,{id:'manual:'+crypto.randomUUID(),manual:true,name,qty,unitPrice,cost}]);e.currentTarget.reset();setManualRow(false)}}>
+                  <label>Product name<input name="name" maxLength={199} required placeholder="Item without barcode" /></label>
+                  <label>Quantity<input name="qty" type="number" min="1" max="1000000" step="1" required defaultValue="1" /></label>
+                  <label>Price (₹)<input name="unitPrice" type="number" min=".01" max="10000000" step=".01" required /></label>
+                  <label>Purchase cost (₹)<input name="cost" type="number" min="0" max="10000000" step=".01" required /></label>
+                  <button type="submit" className="btn primary">Add row</button>
+                  <small className="muted">Sale-only item; does not change inventory. Cost is used to calculate your margin.</small>
+                </form>}
                 {!s.products.length && (
                   <div className="empty-inline">
                     Add products in Inventory before creating a bill.
@@ -1598,19 +1602,15 @@ export default function Home() {
               </section>
               <section className="panel bill" ref={billRef}>
                 <div className="panel-heading">
-                  <h2>
-                    Current bill{" "}
-                    <span className="count">
-                      {cart.reduce((t, p) => t + p.qty, 0)}
-                    </span>
-                  </h2>
+                  <h2>Current bill <span className="count">{cart.reduce((t,p)=>t+p.qty,0)}</span></h2>
+                  <button className="text-button" onClick={()=>{setHistoryExpanded(true);window.setTimeout(()=>historyRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),100)}}><Receipt size={16}/> All sales & receipts</button>
                   <button className="text-button" onClick={() => {setCart([]);setBatchNotice("")}}>
                     Clear
                   </button>
                 </div>
                 <div className="bill-body">
                   {batchNotice && <p role="status" className="notice scan-batch-notice">{batchNotice}</p>}
-                  <div className="cart-items pos-scan-tiles">
+                  <div className="cart-items pos-scan-rows">
                     {!cartItems.length && (
                       <div className="cart-empty">
                         <ScanBarcode size={42} />
@@ -1629,8 +1629,8 @@ export default function Home() {
                               " · " + money(productDiscount(p, s.settings)) + " off"}
                           </small>
                           <label className="sale-line-field">Quantity
-                            <input type="number" min="1" max={s.products.find((x) => x.id === p.id)?.stock || 1} step="1" value={p.qty}
-                              onChange={(e) => { const value = Number(e.target.value); const available = s.products.find((x) => x.id === p.id)?.stock || 0;
+                            <input type="number" min="1" max={p.id.startsWith('manual:')?1000000:s.products.find((x) => x.id === p.id)?.stock || 1} step="1" value={p.qty}
+                              onChange={(e) => { const value = Number(e.target.value); const available = p.id.startsWith('manual:')?1000000:s.products.find((x) => x.id === p.id)?.stock || 0;
                                 if (Number.isInteger(value) && value >= 1 && value <= available)
                                   setCart((rows) => rows.map((row) => row.id === p.id ? { ...row, qty: value } : row)); }} />
                           </label>
@@ -1660,7 +1660,7 @@ export default function Home() {
                             {p.qty}
                             <button
                               aria-label={"Increase " + p.name}
-                              onClick={() => add(p)}
+                              onClick={() => p.id.startsWith('manual:')?setCart(rows=>rows.map(row=>row.id===p.id?{...row,qty:Math.min(1000000,row.qty+1)}:row)):add(p)}
                             >
                               <Plus size={13} />
                             </button>
@@ -1736,20 +1736,21 @@ export default function Home() {
               </section>
             </div>
           )}
-          {view === "Dashboard" && historyExpanded && (
+          {(view === "Dashboard" || view === "Point of sale") && historyExpanded && (
             <section className="panel sales-history-panel" ref={historyRef} id="sales-history">
               <div className="panel-heading">
                 <h2>Sales history</h2>
-                <div className="actions"><span className="muted">{s.sales.length} invoices</span>
+                <div className="actions"><span className="muted">{visibleSales.length} of {s.sales.length} receipts</span>
                   <button className="btn" onClick={() => exportCSV("sales")}>Export sales</button>
                   <button className="text-button" onClick={() => setHistoryExpanded(false)}>Hide history</button></div>
               </div>
+              <div className="sales-date-filter"><label>From <input type="date" aria-label="Sales from date" value={salesFrom} max={salesTo||undefined} onChange={e=>setSalesFrom(e.target.value)} /></label><label>To <input type="date" aria-label="Sales to date" value={salesTo} min={salesFrom||undefined} onChange={e=>setSalesTo(e.target.value)} /></label>{(salesFrom||salesTo)&&<button className="btn" onClick={()=>{setSalesFrom('');setSalesTo('')}}>Clear dates</button>}</div>
               <Table>
                 <TableHeader>
                   <TableRow>
                     {[
-                      "Invoice",
-                      "Date",
+                      "Receipt #",
+                      "Date and time",
                       "Customer",
                       "Items",
                       "Payment",
@@ -1761,17 +1762,13 @@ export default function Home() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {s.sales.map((x) => (
+                  {visibleSales.map((x) => (
                     <TableRow key={x.id}>
                       <TableCell className="mono">
-                        #
-                        {(x.id.startsWith("demo-")
-                          ? x.id
-                          : x.id.slice(0, 8)
-                        ).toUpperCase()}
+                        #{saleReceiptNumber(s.sales,x)}
                       </TableCell>
                       <TableCell>
-                        {new Date(x.date).toLocaleString("en-IN")}
+                        {new Date(x.date).toLocaleString("en-IN",{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'})}
                       </TableCell>
                       <TableCell>{x.customer}</TableCell>
                       <TableCell>
@@ -1796,8 +1793,8 @@ export default function Home() {
                   ))}
                 </TableBody>
               </Table>
-              {!s.sales.length && (
-                <div className="empty-inline">No sales recorded yet.</div>
+              {!visibleSales.length && (
+                <div className="empty-inline">{s.sales.length?'No sales within these dates.':'No sales recorded yet.'}</div>
               )}
             </section>
           )}
@@ -2687,7 +2684,7 @@ export default function Home() {
             </form>
           )}
           {modal === "receipt" && receipt && (
-            <SaleReceipt sale={receipt} settings={s.settings} demo={s.demo} />
+            <SaleReceipt sale={{...receipt,receiptNumber:saleReceiptNumber(s.sales,receipt)}} settings={s.settings} demo={s.demo} />
           )}
         </DialogContent>
       </Dialog>
