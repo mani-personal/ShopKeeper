@@ -565,7 +565,7 @@ export function registerWholesaleRoutes(app, db) {
           .prepare(
             "INSERT INTO wholesale_request_items(request_id,product_id,quantity,unit_price) VALUES(?,?,?,?)",
           )
-          .run(id, p.id, item.quantity, p.price);
+          .run(id, p.id, item.quantity, Number(p.price) - (p.special_active ? Number(p.special_discount) : 0));
       }
     });
     res.json({
