@@ -8209,3 +8209,22 @@ html.dark .local-supplier-row.active {
   .admin-product-toolbar { align-items: stretch; }
   .admin-product-toolbar > span { width: 100%; }
 }
+
+/* Vendor console updates */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: color-mix(in srgb, var(--surface, #fff) 92%, var(--primary, #2563eb)); }
+.sale-customer-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin: 12px 0; }
+.customer-add-button { height: 40px; width: 40px; }
+.purchase-detail-dialog { max-width: 900px; }
+.purchase-detail-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0 18px; }
+.purchase-detail-summary > div { border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 12px; background: var(--surface-muted, #f8fafc); }
+.purchase-detail-summary span { display: block; font-size: 12px; color: var(--muted, #64748b); margin-bottom: 4px; }
+.purchase-detail-summary b { display: block; font-size: 15px; }
+.purchase-payment-form { display: grid; grid-template-columns: 1fr 180px 1.5fr auto; gap: 10px; align-items: end; border-top: 1px solid var(--border, #e5e7eb); padding-top: 16px; margin-top: 16px; }
+.purchase-payment-form input { min-width: 0; }
+.text-warning { color: #b45309; }
+.text-success { color: #15803d; }
+@media (max-width: 760px) {
+  .purchase-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .purchase-payment-form { grid-template-columns: 1fr; }
+}
