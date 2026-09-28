@@ -19,6 +19,50 @@ const wholesaleColumns = ["Business ID","Product ID","Wholesale business","Busin
 const inventoryCSV = (columns,rows) => '\uFEFF' + [columns, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 export function registerBusinessRoutes(app, db) {
+  app.get("/api/admin/product-catalog", async (req, res) => {
+    const kind = req.query.kind;
+    if (!["vendor", "wholesale"].includes(kind)) throw bad("Choose vendor or wholesale catalogue.");
+    access(req.user, kind);
+    const merged = new Map();
+    const put = (source) => {
+      const barcode = String(source.barcode ?? "").trim();
+      const name = String(source.name ?? "").trim();
+      const weight = String(source.weight ?? "").trim();
+      const unit = String(source.unit ?? "").trim() || "piece";
+      const key = barcode || [name.toLowerCase(), weight.toLowerCase(), unit.toLowerCase()].join("|");
+      if (!name || !key) return;
+      const current = merged.get(key);
+      if (!current) {
+        merged.set(key, {
+          key,
+          name,
+          mrp: source.mrp == null || source.mrp === "" ? null : Number(source.mrp),
+          category: String(source.category ?? "").trim() || "General",
+          subcategory: String(source.subcategory ?? "").trim(),
+          barcode,
+          weight,
+          unit,
+        });
+        return;
+      }
+      // Keep the first stable identity but fill missing catalogue metadata from later stores.
+      for (const field of ["mrp", "category", "subcategory", "weight", "barcode"]) {
+        if ((current[field] == null || current[field] === "" || current[field] === "General") && source[field] != null && source[field] !== "")
+          current[field] = field === "mrp" ? Number(source[field]) : String(source[field]).trim();
+      }
+      if (!current.unit && unit) current.unit = unit;
+    };
+    // The platform master catalogue is intentionally built from every existing vendor store.
+    // The same catalogue can seed either a new vendor store or a new wholesale shop.
+    const stores = await db.prepare("SELECT data FROM vendors ORDER BY created_at,id").all();
+    for (const store of stores) {
+      let state;
+      try { state = JSON.parse(store.data); } catch { continue; }
+      for (const product of state.products || []) put(product);
+    }
+    const items = [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ kind, source: "vendors", count: items.length, items });
+  });
   app.get("/api/admin/inventory/export", async (req, res) => {
     const kind = req.query.kind;
     if (!["vendor", "wholesale"].includes(kind)) throw bad("Choose vendor or wholesale inventory.");
@@ -70,6 +114,87 @@ export function registerBusinessRoutes(app, db) {
       await db.prepare("INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)").run(Date.now(),req.user.id,kind === "vendor" ? businessId : null,"business_created:"+kind+":"+businessId);
     });
     res.json({ id:businessId, kind });
+  });
+  app.post("/api/admin/businesses/:kind/:id/catalog-import", async (req, res) => {
+    const { kind, id } = req.params;
+    if (!["vendor", "wholesale"].includes(kind)) throw bad("Business not found.", 404);
+    access(req.user, kind);
+    if (!Array.isArray(req.body.items) || req.body.items.length < 1 || req.body.items.length > 500)
+      throw bad("Select 1–500 products to import.");
+    const cleanItems = req.body.items.map((item, index) => {
+      const name = field(item?.name, 200);
+      const barcode = field(item?.barcode, 200);
+      const category = field(item?.category, 100) || "General";
+      const subcategory = typeof item?.subcategory === "string" ? item.subcategory.trim().slice(0, 100) : "";
+      const weight = typeof item?.weight === "string" ? item.weight.trim().slice(0, 50) : "";
+      const unit = field(item?.unit, 50) || "piece";
+      const sellingPrice = Number(item?.sellingPrice);
+      const costPrice = item?.costPrice == null || item?.costPrice === "" ? 0 : Number(item.costPrice);
+      const mrp = item?.mrp == null || item?.mrp === "" ? null : Number(item.mrp);
+      if (!name || !barcode || !Number.isFinite(sellingPrice) || sellingPrice <= 0 || sellingPrice > 10000000)
+        throw bad(`Row ${index + 1}: product name, barcode and selling price are required.`);
+      if (!Number.isFinite(costPrice) || costPrice < 0 || costPrice > 10000000)
+        throw bad(`Row ${index + 1}: enter a valid cost price or leave it blank.`);
+      if (mrp != null && (!Number.isFinite(mrp) || mrp < 0 || mrp > 10000000))
+        throw bad(`Row ${index + 1}: enter a valid MRP.`);
+      if (kind === "vendor" && mrp != null && sellingPrice > mrp)
+        throw bad(`Row ${index + 1}: selling price cannot exceed MRP.`);
+      return { name, barcode, category, subcategory, weight, unit, sellingPrice, costPrice, mrp };
+    });
+    const seen = new Set();
+    for (const item of cleanItems) {
+      const key = item.barcode.toLowerCase();
+      if (seen.has(key)) throw bad(`Duplicate barcode in the selected products: ${item.barcode}.`);
+      seen.add(key);
+    }
+    let imported = 0;
+    let skipped = 0;
+    await transaction(db, async () => {
+      if (kind === "vendor") {
+        const row = await db.prepare("SELECT data FROM vendors WHERE id=? FOR UPDATE").get(id);
+        if (!row) throw bad("Vendor not found.", 404);
+        const state = JSON.parse(row.data);
+        const existing = new Set((state.products || []).map(p => String(p.barcode || "").trim().toLowerCase()).filter(Boolean));
+        for (const item of cleanItems) {
+          if (existing.has(item.barcode.toLowerCase())) { skipped++; continue; }
+          state.products.push({
+            id: randomUUID(),
+            name: item.name,
+            barcode: item.barcode,
+            category: item.category,
+            subcategory: item.subcategory,
+            weight: item.weight,
+            unit: item.unit,
+            mrp: item.mrp == null ? undefined : item.mrp,
+            price: item.sellingPrice,
+            cost: item.costPrice,
+            stock: 0,
+            min: 10,
+            target: 50,
+            discountMode: "none",
+            customDiscount: 0,
+            specialDiscount: false,
+          });
+          existing.add(item.barcode.toLowerCase());
+          imported++;
+        }
+        await db.prepare("UPDATE vendors SET data=?,version=version+1 WHERE id=?").run(JSON.stringify(state), id);
+      } else {
+        const target = await db.prepare("SELECT 1 FROM wholesalers WHERE user_id=?").get(id);
+        if (!target) throw bad("Wholesaler not found.", 404);
+        const existing = new Set((await db.prepare("SELECT sku FROM wholesale_products WHERE wholesaler_id=? AND sku<>''").all(id)).map(p => String(p.sku).trim().toLowerCase()));
+        for (const item of cleanItems) {
+          if (existing.has(item.barcode.toLowerCase())) { skipped++; continue; }
+          await db.prepare(`INSERT INTO wholesale_products(id,wholesaler_id,name,sku,unit,price,stock,active,created_at,updated_at,category,description,mrp,min_qty,bulk_qty,bulk_price,subcategory,weight,hsn_code,gst_rate,special_discount,special_active) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+            randomUUID(), id, item.name, item.barcode, item.unit, item.sellingPrice, 0, true, Date.now(), Date.now(), item.category, "", item.mrp, 1, null, null, item.subcategory, item.weight, "", 0, 0, false,
+          );
+          existing.add(item.barcode.toLowerCase());
+          imported++;
+        }
+      }
+      await db.prepare("INSERT INTO audit(created_at,user_id,vendor_id,action) VALUES(?,?,?,?)").run(Date.now(), req.user.id, kind === "vendor" ? id : null, `catalog_import:${kind}:${id}:${imported}`);
+    });
+    res.json({ ok: true, imported, skipped });
   });
   app.get("/api/admin/businesses/:kind/:id", async (req,res) => {
     const {kind,id} = req.params;
