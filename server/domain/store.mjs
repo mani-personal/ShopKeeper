@@ -29,8 +29,9 @@ export function supplierAccounts(s) {
         const buys = s.purchases.filter(p => supplierKey(p.supplier) === key), known = buys.filter(p => p.paidAmount !== undefined);
         const returns = (s.supplierReturns ?? []).filter(p => supplierKey(p.supplier) === key);
         const moves = (s.supplierPayments ?? []).filter(p => supplierKey(p.supplier) === key);
-        const purchases = roundMoney(known.reduce((t, p) => t + p.total, 0)), paid = roundMoney(known.reduce((t, p) => t + (p.paidAmount ?? 0), 0) + moves.filter(p => p.direction === 'payment').reduce((t, p) => t + p.amount, 0));
-        const credits = roundMoney(returns.reduce((t, p) => t + p.amount, 0)), refunded = roundMoney(moves.filter(p => p.direction === 'refund').reduce((t, p) => t + p.amount, 0));
+        const externalMoves = moves.filter(p => !(typeof p.reference === 'string' && p.reference.startsWith('purchase:')));
+        const purchases = roundMoney(known.reduce((t, p) => t + p.total, 0)), paid = roundMoney(known.reduce((t, p) => t + (p.paidAmount ?? 0), 0) + externalMoves.filter(p => p.direction === 'payment').reduce((t, p) => t + p.amount, 0));
+        const credits = roundMoney(returns.reduce((t, p) => t + p.amount, 0)), refunded = roundMoney(externalMoves.filter(p => p.direction === 'refund').reduce((t, p) => t + p.amount, 0));
         const balance = roundMoney(purchases - credits - paid + refunded);
         return { key, name, purchases, paid, credits, refunded, balance, pending: Math.max(0, balance), credit: Math.max(0, -balance), unknown: buys.length - known.length };
     });
@@ -228,6 +229,30 @@ export function mutate(s, a) {
             if (a.amount > (a.direction === 'payment' ? account.pending : account.credit))
                 throw Error('Amount exceeds the pending balance or available credit.');
             s.supplierPayments.unshift({ id: a.id, date: new Date().toISOString(), supplier: account.name, amount: a.amount, direction: a.direction, reference: typeof a.reference === 'string' ? a.reference.slice(0, 200) : '' });
+            break;
+        }
+        case 'purchase_payment': {
+            s.supplierPayments ??= [];
+            if (s.supplierPayments.some(x => x.id === a.id))
+                break;
+            const purchase = s.purchases.find(x => x.id === a.purchaseId);
+            if (!purchase || !txt(a.id) || !txt(a.purchaseId) || !num(a.amount) || a.amount <= 0 || roundMoney(a.amount) !== a.amount)
+                throw Error('Choose a valid stock order and payment amount.');
+            const returned = s.supplierReturns?.filter(x => x.purchaseId === purchase.id).reduce((t, x) => t + x.amount, 0) ?? 0;
+            const paid = purchase.paidAmount ?? 0;
+            const pending = Math.max(0, roundMoney(purchase.total - paid - returned));
+            if (a.amount > pending)
+                throw Error('Payment exceeds the pending amount for this stock order.');
+            purchase.paidAmount = roundMoney(paid + a.amount);
+            const note = typeof a.reference === 'string' ? a.reference.trim().slice(0, 160) : '';
+            s.supplierPayments.unshift({
+                id: a.id,
+                date: new Date().toISOString(),
+                supplier: purchase.supplier,
+                amount: a.amount,
+                direction: 'payment',
+                reference: `purchase:${purchase.id}${note ? ' · ' + note : ''}`.slice(0, 200),
+            });
             break;
         }
         case 'start_trial': {
