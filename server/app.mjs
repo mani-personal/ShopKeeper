@@ -600,6 +600,7 @@ export function createApp(
               bill_import: "purchases",
               supplier_return: "purchases",
               supplier_payment: "purchases",
+              purchase_payment: "purchases",
               purchase_settlement: "purchases",
               contact: "stores",
               expense: "reports",
@@ -615,6 +616,7 @@ export function createApp(
               bill_import: "purchases",
               supplier_return: "returns",
               supplier_payment: "payments",
+              purchase_payment: "payments",
               purchase_settlement: "payments",
               contact: "customers",
               expense: "reports",
@@ -629,6 +631,7 @@ export function createApp(
             "inventory_import",
             "supplier_return",
             "supplier_payment",
+            "purchase_payment",
             "purchase_settlement",
           ].includes(a.type)
             ? a.type + ":" + a.id
@@ -670,6 +673,20 @@ export function createApp(
             await db
               .prepare("UPDATE vendors SET trial_days=? WHERE id=?")
               .run((await pricing(db)).trialDays, selected);
+          if (user.role === "vendor" && a.type === "product" && a.product?.id) {
+            const existing = s.products.find((item) => item.id === a.product.id);
+            if (existing) {
+              const same = (left, right) => (left ?? "") === (right ?? "");
+              if (String(a.product.name ?? "").trim() !== existing.name ||
+                  String(a.product.barcode ?? "").trim() !== existing.barcode ||
+                  String(a.product.category ?? "") !== existing.category ||
+                  !same(String(a.product.subcategory ?? "").trim(), String(existing.subcategory ?? "").trim()) ||
+                  !same(String(a.product.weight ?? "").trim(), String(existing.weight ?? "").trim()) ||
+                  (a.product.mrp ?? null) !== (existing.mrp ?? null)) {
+                throw bad("Product name, barcode, category, subcategory, MRP and weight are managed by the store catalogue and cannot be edited by vendors.", 403);
+              }
+            }
+          }
           try {
             mutate(s, a);
           } catch (e) {
@@ -706,6 +723,7 @@ export function createApp(
         settings: "Store settings updated",
         supplier_return: "Supplier return recorded",
         supplier_payment: "Supplier payment recorded",
+        purchase_payment: "Purchase payment recorded",
         purchase_settlement: "Purchase settled",
         subscription_order: "Subscription requested",
         subscription_reference: "Payment reference submitted",
