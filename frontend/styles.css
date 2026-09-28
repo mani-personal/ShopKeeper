@@ -8184,3 +8184,28 @@ html.dark .local-supplier-row.active {
     transition-duration: .01ms !important;
   }
 }
+
+/* Admin consolidated product setup */
+.admin-product-setup { margin-top: 1.25rem; overflow: hidden; }
+.admin-product-setup .panel-heading { align-items: flex-start; gap: 1rem; }
+.admin-product-toolbar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin: 1rem 0 .75rem; }
+.admin-product-toolbar > input { flex: 1 1 280px; min-width: 220px; }
+.admin-product-toolbar > span { color: var(--muted-foreground, #64748b); font-size: .86rem; white-space: nowrap; }
+.admin-product-table-wrap { max-height: 560px; border: 1px solid var(--border, #e2e8f0); border-radius: .8rem; }
+.admin-product-table { min-width: 1480px; }
+.admin-product-table th { position: sticky; top: 0; z-index: 2; background: var(--card, #fff); white-space: nowrap; }
+.admin-product-table td { vertical-align: middle; padding: .5rem; }
+.admin-product-table .table-input { width: 100%; min-width: 100px; border: 1px solid transparent; background: transparent; border-radius: .45rem; padding: .48rem .55rem; }
+.admin-product-table .table-input:hover { border-color: var(--border, #e2e8f0); background: var(--background, #fff); }
+.admin-product-table .table-input:focus { outline: none; border-color: var(--primary, #2563eb); background: var(--background, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #2563eb) 12%, transparent); }
+.stock-zero { display: inline-flex; min-width: 2rem; justify-content: center; padding: .35rem .5rem; border-radius: 999px; background: color-mix(in srgb, #64748b 10%, transparent); color: #64748b; font-variant-numeric: tabular-nums; }
+.admin-product-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-top: .9rem; color: var(--muted-foreground, #64748b); font-size: .85rem; }
+.admin-product-empty { display: flex; gap: .65rem; align-items: center; padding: 1rem; margin-top: .9rem; border: 1px dashed var(--border, #cbd5e1); border-radius: .75rem; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted, #f8fafc) 60%, transparent); }
+.admin-product-setup .spin { animation: admin-product-spin .9s linear infinite; }
+@keyframes admin-product-spin { to { transform: rotate(360deg); } }
+@media (max-width: 800px) {
+  .admin-product-footer { align-items: stretch; flex-direction: column; }
+  .admin-product-footer .btn { width: 100%; justify-content: center; }
+  .admin-product-toolbar { align-items: stretch; }
+  .admin-product-toolbar > span { width: 100%; }
+}
