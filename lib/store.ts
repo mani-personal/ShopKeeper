@@ -98,6 +98,18 @@ case 'supplier_payment':{
  if(a.amount>(a.direction==='payment'?account.pending:account.credit))throw Error('Amount exceeds the pending balance or available credit.');
  s.supplierPayments.unshift({id:a.id,date:new Date().toISOString(),supplier:account.name,amount:a.amount,direction:a.direction,reference:typeof a.reference==='string'?a.reference.slice(0,200):''});break;
 }
+case 'purchase_payment':{
+ s.supplierPayments??=[];if(s.supplierPayments.some(x=>x.id===a.id))break;
+ const purchase=s.purchases.find(x=>x.id===a.purchaseId);
+ if(!purchase||!txt(a.id)||!txt(a.purchaseId)||!num(a.amount)||a.amount<=0||roundMoney(a.amount)!==a.amount)throw Error('Choose a valid stock order and payment amount.');
+ const returned=s.supplierReturns?.filter(x=>x.purchaseId===purchase.id).reduce((t,x)=>t+x.amount,0)??0;
+ const paid=purchase.paidAmount??0;
+ const pending=Math.max(0,roundMoney(purchase.total-paid-returned));
+ if(a.amount>pending)throw Error('Payment exceeds the pending amount for this stock order.');
+ purchase.paidAmount=roundMoney(paid+a.amount);
+ const note=typeof a.reference==='string'?a.reference.trim().slice(0,160):'';
+ s.supplierPayments.unshift({id:a.id,date:new Date().toISOString(),supplier:purchase.supplier,amount:a.amount,direction:'payment',reference:`purchase:${purchase.id}${note?' · '+note:''}`.slice(0,200)});break;
+}
 case 'start_trial':{s.trialStartedAt??=new Date().toISOString();break;}
 case 'subscription_request':{
  if(!['monthly','yearly'].includes(a.plan))throw Error('Choose monthly or yearly.');
