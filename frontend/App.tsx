@@ -273,6 +273,8 @@ export default function Home() {
     [barcode, setBarcode] = useState(""),
     [discount, setDiscount] = useState(0),
     [payment, setPayment] = useState("Cash"),
+    [saleCustomer, setSaleCustomer] = useState("Walk-in customer"),
+    [purchaseDetail, setPurchaseDetail] = useState<any | null>(null),
     [receipt, setReceipt] = useState<Sale | null>(null),
     [period, setPeriod] = useState("Last 7 days"),
     [camera, setCamera] = useState(false),
@@ -458,6 +460,8 @@ export default function Home() {
     setDiscount(0);
     setPayment("Cash");
     setBarcode("");
+    setSaleCustomer("Walk-in customer");
+    setPurchaseDetail(null);
     saleId.current = "";
     go("Dashboard");
     await refresh(id);
@@ -468,6 +472,7 @@ export default function Home() {
     setCategory("All categories");
     setLowOnly(false);
   }
+  const vendorProductLocked = role === "vendor" && Boolean(product.id);
   function add(p: Product) {
     if (loading || busy) return;
     if (p.stock <= 0) {
@@ -706,7 +711,7 @@ export default function Home() {
       items: cart,
       discount,
       payment,
-      customer: "Walk-in customer",
+      customer: saleCustomer.trim() || "Walk-in customer",
     });
     if (result) {
       setReceipt(result.sales.find((x) => x.id === saleId.current)!);
@@ -714,6 +719,7 @@ export default function Home() {
       setCart([]);
       setBatchNotice("");
       setDiscount(0);
+      setSaleCustomer("Walk-in customer");
       saleId.current = "";
       toast.success("Sale saved. Inventory updated.");
     }
@@ -1017,7 +1023,7 @@ export default function Home() {
               </p>
             </div>
             <div className="actions">
-              {["Dashboard", "Inventory"].includes(view) && (
+              {isAdmin && ["Dashboard", "Inventory"].includes(view) && (
                 <button className="btn" onClick={() => exportCSV()}>
                   <Download size={16} />
                   Export
@@ -1701,6 +1707,18 @@ export default function Home() {
                       {money(Math.max(0, netSubtotal - discount))}
                     </strong>
                   </div>
+                  <div className="sale-customer-picker">
+                    <label>Customer
+                      <Select value={saleCustomer} onValueChange={setSaleCustomer}>
+                        <SelectTrigger aria-label="Sale customer"><SelectValue placeholder="Walk-in customer" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Walk-in customer">Walk-in customer</SelectItem>
+                          {s.customers.map((customer) => <SelectItem key={customer.id} value={customer.name}>{customer.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                    <button type="button" className="icon-button customer-add-button" aria-label="Add new customer" title="Add new customer" onClick={() => setModal("customer")}><Plus size={18} /></button>
+                  </div>
                   <label>
                     Payment method
                     <Choice
@@ -1830,17 +1848,22 @@ export default function Home() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {s.purchases.map((x) => (
-                    <TableRow key={x.id}>
-                      <TableCell>
-                        {new Date(x.date).toLocaleDateString("en-IN")}
-                      </TableCell>
-                      <TableCell>{x.product}</TableCell>
-                      <TableCell>{x.supplier}</TableCell>
-                      <TableCell>{x.qty}</TableCell>
-                      <TableCell>{money(x.total)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {s.purchases.map((x) => {
+                    const returned = (s.supplierReturns ?? []).filter((r) => r.purchaseId === x.id).reduce((t, r) => t + r.amount, 0);
+                    const paid = x.paidAmount ?? 0;
+                    const pending = Math.max(0, roundMoney(x.total - paid - returned));
+                    return (
+                      <TableRow key={x.id} className="clickable-row" onClick={() => { setPurchaseDetail({ ...x, paid, returned, pending }); setModal("purchase-detail"); }}>
+                        <TableCell>
+                          {new Date(x.date).toLocaleDateString("en-IN")}
+                        </TableCell>
+                        <TableCell><b>{x.product}</b><small className="block-text">#{x.id.slice(0, 8).toUpperCase()}</small></TableCell>
+                        <TableCell>{x.supplier}</TableCell>
+                        <TableCell>{x.qty}</TableCell>
+                        <TableCell><b>{money(x.total)}</b><small className="block-text">{pending > 0 ? `${money(pending)} pending` : "Paid"}</small></TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               {!s.purchases.length && (
@@ -2349,8 +2372,12 @@ export default function Home() {
                   : "Add product"
                 : modal === "contact"
                   ? "Add supplier"
-                  : modal === "purchase"
+                  : modal === "customer"
+                    ? "Add customer"
+                    : modal === "purchase"
                     ? "Receive stock"
+                    : modal === "purchase-detail"
+                      ? "Stock order transactions"
                     : modal === "receipt"
                       ? "Sale receipt"
                       : "Add expense"}
@@ -2358,9 +2385,11 @@ export default function Home() {
           <DialogDescription>
             {modal === "product"
               ? "Update the item details and stock below."
-              : modal === "receipt"
-                ? "Sale saved and inventory updated."
-                : "Save this record to your store."}
+              : modal === "purchase-detail"
+                ? "Review the order total, paid amount, pending balance and related transactions."
+                : modal === "receipt"
+                  ? "Sale saved and inventory updated."
+                  : "Save this record to your store."}
           </DialogDescription>
           {modal === "vendor" && (
             <VendorForm
@@ -2395,7 +2424,7 @@ export default function Home() {
                 }
               }}
             >
-              <div className="product-capture-actions"><button type="button" className="btn primary" onClick={() => {setCameraPurpose("product");setCamera(true)}}><ScanBarcode size={16}/> Scan product</button><button type="button" className="btn" aria-expanded={productPhotoMode} onClick={()=>setProductPhotoMode(mode=>!mode)}><Camera size={16}/> {productPhotoMode?'Hide photo options':'Read label from photo (optional)'}</button></div>
+              <div className="product-capture-actions"><button type="button" className="btn primary" disabled={vendorProductLocked} onClick={() => {setCameraPurpose("product");setCamera(true)}}><ScanBarcode size={16}/> Scan product</button><button type="button" className="btn" disabled={vendorProductLocked} aria-expanded={productPhotoMode} onClick={()=>setProductPhotoMode(mode=>!mode)}><Camera size={16}/> {productPhotoMode?'Hide photo options':'Read label from photo (optional)'}</button></div>
               {productPhotoMode&&<ProductLabel
                 key={product.id || "new"}
                 apply={(draft) =>
@@ -2411,6 +2440,7 @@ export default function Home() {
               <button
                 type="button"
                 className="btn"
+                disabled={vendorProductLocked}
                 onClick={() =>
                   setProduct((p) => ({
                     ...p,
@@ -2427,6 +2457,7 @@ export default function Home() {
                   min={Number.isFinite(product.price) ? product.price : 0}
                   step=".01"
                   value={product.mrp ?? ""}
+                  disabled={vendorProductLocked}
                   onChange={(e) => setProduct((current) => {
                     const mrp = e.target.value === "" ? undefined : Number(e.target.value);
                     return {...current,mrp,...(mrp !== undefined && !Number.isFinite(current.price) ? {price:mrp} : {})};
@@ -2435,17 +2466,18 @@ export default function Home() {
               </label>
               <p className="muted small">Each weight or package size needs its own product. If two sizes share a printed barcode, give one a separate internal item code so the scanner cannot select the wrong price.</p>
               <label>Product subcategory
-                <input value={product.subcategory ?? ""} maxLength={100} placeholder="For example: Rice, biscuits, 500 ml packs"
+                <input value={product.subcategory ?? ""} maxLength={100} placeholder="For example: Rice, biscuits, 500 ml packs" disabled={vendorProductLocked}
                   onChange={(e) => setProduct({ ...product, subcategory: e.target.value })} />
               </label>
               <label>Weight / size
-                <input value={product.weight ?? ""} maxLength={50} placeholder="For example: 500 g, 1 kg, 750 ml"
+                <input value={product.weight ?? ""} maxLength={50} placeholder="For example: 500 g, 1 kg, 750 ml" disabled={vendorProductLocked}
                   onChange={(e) => setProduct({ ...product, weight: e.target.value })} />
               </label>
               {product.mrp !== undefined && (
                 <button
                   type="button"
                   className="btn"
+                  disabled={vendorProductLocked}
                   onClick={() =>
                     setProduct({ ...product, price: product.mrp! })
                   }
@@ -2499,6 +2531,7 @@ export default function Home() {
                         ? ""
                         : (product[k] ?? "")
                     }
+                    disabled={vendorProductLocked && ["name", "barcode", "category"].includes(k)}
                     onChange={(e) =>
                       setProduct({
                         ...product,
@@ -2627,6 +2660,26 @@ export default function Home() {
               </button>
             </form>
           )}
+          {modal === "customer" && (
+            <form
+              className="form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                const savedState = await act({ type: "contact", kind: "customers", name: f.get("name"), phone: f.get("phone") });
+                if (savedState) {
+                  const added = savedState.customers[savedState.customers.length - 1];
+                  setSaleCustomer(added?.name || String(f.get("name") || "Walk-in customer"));
+                  setModal("");
+                  toast.success("Customer added");
+                }
+              }}
+            >
+              <label>Name<input name="name" required maxLength={199} /></label>
+              <label>Phone<input name="phone" type="tel" maxLength={30} /></label>
+              <button className="btn primary" disabled={busy}>Save customer</button>
+            </form>
+          )}
           {modal === "purchase" && (
             <PurchaseForm
               s={s}
@@ -2641,6 +2694,57 @@ export default function Home() {
                 }
               }}
             />
+          )}
+          {modal === "purchase-detail" && purchaseDetail && (
+            <section className="purchase-detail-dialog">
+                <section className="purchase-detail-summary">
+                  <div><span>Product</span><b>{purchaseDetail.product}</b></div>
+                  <div><span>Supplier</span><b>{purchaseDetail.supplier}</b></div>
+                  <div><span>Order total</span><b>{money(purchaseDetail.total)}</b></div>
+                  <div><span>Paid</span><b>{money(purchaseDetail.paid)}</b></div>
+                  <div><span>Return credit</span><b>{money(purchaseDetail.returned)}</b></div>
+                  <div><span>Pending</span><b className={purchaseDetail.pending ? "text-warning" : "text-success"}>{money(purchaseDetail.pending)}</b></div>
+                </section>
+                <div className="panel-heading"><div><h3>Transactions</h3><p className="muted small">Initial payment is taken from the stock receipt. Later order payments are linked by the purchase reference.</p></div></div>
+                <div className="table-scroll">
+                  <table className="ledger-table">
+                    <thead><tr><th>Date</th><th>Type</th><th>Details</th><th>Amount</th></tr></thead>
+                    <tbody>
+                      {(purchaseDetail.paid > 0 ? [{ id: "initial-payment", date: purchaseDetail.date, type: "Initial payment", details: "Amount recorded when stock was received", amount: purchaseDetail.paid }] : [])
+                        .concat((s.supplierPayments ?? []).filter((t) => t.direction === "payment" && typeof t.reference === "string" && t.reference.includes(`purchase:${purchaseDetail.id}`)).map((t) => ({ id: t.id, date: t.date, type: "Payment", details: t.reference.replace(`purchase:${purchaseDetail.id}`, "").replace(/^[:\s-]+/, "") || "Order payment", amount: t.amount })))
+                        .concat((s.supplierReturns ?? []).filter((r) => r.purchaseId === purchaseDetail.id).map((r) => ({ id: r.id, date: r.date, type: "Return credit", details: `${r.qty} ${purchaseDetail.product} · ${r.reason}`, amount: r.amount })))
+                        .sort((a, b) => b.date.localeCompare(a.date))
+                        .map((t) => <tr key={t.id}><td>{new Date(t.date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td><td>{t.type}</td><td>{t.details}</td><td>{money(t.amount)}</td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+                {purchaseDetail.pending > 0 && <form className="purchase-payment-form" onSubmit={async (e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  const amount = Number(f.get("amount"));
+                  if (!Number.isFinite(amount) || amount <= 0 || amount > purchaseDetail.pending || Math.round(amount * 100) !== amount * 100) { toast.error("Enter a valid payment up to the pending amount."); return; }
+                  const saved = await act({ type: "purchase_payment", id: crypto.randomUUID(), purchaseId: purchaseDetail.id, amount, reference: String(f.get("reference") || "") });
+                  if (saved) {
+                    const updated = saved.purchases.find((p: any) => p.id === purchaseDetail.id);
+                    if (updated) {
+                      const returned = (saved.supplierReturns ?? []).filter((r: any) => r.purchaseId === updated.id).reduce((t: number, r: any) => t + r.amount, 0);
+                      const paid = updated.paidAmount ?? 0;
+                      setPurchaseDetail({ ...updated, paid, returned, pending: Math.max(0, roundMoney(updated.total - paid - returned)) });
+                    }
+                    e.currentTarget.reset();
+                    toast.success("Payment recorded for this stock order");
+                  }
+                }}>
+                  <strong>Record payment for this order</strong>
+                  <input name="amount" type="number" min="0.01" max={purchaseDetail.pending} step="0.01" placeholder="Amount (₹)" required />
+                  <input name="reference" maxLength={180} placeholder="Payment reference / note" />
+                  <button className="btn primary" disabled={busy}>Record payment</button>
+                </form>}
+                <div className="actions purchase-detail-actions">
+                  <button type="button" className="btn" onClick={() => { setPurchaseDetail(null); setModal(""); go("Supply hub"); }}>Manage supplier account</button>
+                  <button type="button" className="btn" onClick={() => { setPurchaseDetail(null); setModal(""); }}>Close</button>
+                </div>
+            </section>
           )}
           {modal === "expense" && (
             <form
