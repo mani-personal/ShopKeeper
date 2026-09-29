@@ -37,13 +37,21 @@ function seller(user) {
   if (user.role !== "wholesale")
     throw bad("Wholesale seller access required.", 403);
 }
-function vendorName(row) {
+function vendorDetails(row) {
   try {
-    return JSON.parse(row.vendor_data).settings.name;
+    const settings = JSON.parse(row.vendor_data || row.data || "{}").settings || {};
+    return {
+      name: settings.name || "Vendor",
+      phone: settings.phone || "",
+      address: settings.address || "",
+      stateCode: String(settings.stateCode || settings.state_code || "").replace(/\D/g, "").slice(0, 2),
+      gstNumber: String(settings.gstNumber || settings.gst_number || "").trim(),
+    };
   } catch {
-    return "Vendor";
+    return { name: "Vendor", phone: "", address: "", stateCode: "", gstNumber: "" };
   }
 }
+function vendorName(row) { return vendorDetails(row).name; }
 
 async function sellerData(db, id) {
   const profile = await db
@@ -106,6 +114,7 @@ async function sellerData(db, id) {
     requests: requests.map((r) => ({
       ...r,
       vendorName: vendorName(r),
+      buyerDetails: vendorDetails(r),
       items: items.filter((i) => i.request_id === r.id),
     })),
     transactions: transactions.map((t) => ({
@@ -117,6 +126,7 @@ async function sellerData(db, id) {
     vendors: vendors.map((v) => ({
       id: v.id,
       name: vendorName({ vendor_data: v.data }),
+      buyerDetails: vendorDetails({ vendor_data: v.data }),
       category: v.business_type,
       selected: v.selected === true || v.selected === 1,
       suspended: v.suspended,
