@@ -545,7 +545,8 @@ export function WholesalePortal() {
                   name="hsnCode"
                   maxLength={20}
                   defaultValue={editing.hsn_code || ""}
-                  placeholder="Optional"
+                  placeholder="Enter HSN / SAC code"
+                  required
                 />
               </label>
               <label>
@@ -1060,7 +1061,7 @@ function MarketplaceRequests({
         <button className={requestView === "completed" ? "btn primary" : "btn"} onClick={() => setRequestView("completed")}>Completed & cancelled ({data.requests.filter((r: any) => ["completed", "cancelled"].includes(r.status)).length})</button>
       </div>
       {requestView === "completed" && <div className="panel padded archive-orders"><div className="archive-filters"><label>Search vendor, product or order<input value={archiveQuery} onChange={e=>setArchiveQuery(e.target.value)} placeholder="Search completed orders"/></label><label>From<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>To<input type="date" value={through} onChange={e=>setThrough(e.target.value)}/></label></div>
-        {data.requests.filter((r:any)=>["completed","cancelled"].includes(r.status) && (!archiveQuery || (r.id+" "+r.vendorName+" "+r.items.map((i:any)=>i.name).join(" ")).toLowerCase().includes(archiveQuery.toLowerCase())) && (!from || new Date(Number(r.created_at)).toISOString().slice(0,10)>=from) && (!through || new Date(Number(r.created_at)).toISOString().slice(0,10)<=through)).map((r:any)=>{const finance=orderFinancials(r,data.transactions,data.returns,data.refunds),open=expanded===r.id;return <article className="archive-order" key={r.id}><button type="button" className="admin-business-row" aria-expanded={open} onClick={()=>setExpanded(open?"":r.id)}><span><b>{r.vendorName} · #{r.id.slice(0,8).toUpperCase()}</b><small>{new Date(Number(r.created_at)).toLocaleString("en-IN")} · {r.items.length} items</small></span><span className={"badge "+statusTone(r.status)}>{r.status}</span><b>{money(finance.payable)}</b></button>{open&&<div className="archive-detail"><p>{r.notes||"No order notes"} · {orderHelp[r.status]}</p>{r.items.map((i:any)=><div className="record-row" key={i.product_id}><b>{i.name}</b><small>{i.quantity} {i.unit}{i.weight?" · "+i.weight:""}</small><b>{money(Number(i.quantity)*Number(i.unit_price))}</b></div>)}<div className="payment-numbers"><span>Paid <b>{money(finance.paid)}</b></span><span>Pending <b>{money(finance.balance)}</b></span><span>Returns <b>{money(finance.returnCredit)}</b></span><span>Refund due <b>{money(finance.refundDue)}</b></span></div><h3>Payments</h3>{data.transactions.filter((t:any)=>t.request_id===r.id).map((t:any)=><div className="record-row" key={t.id}><b>{money(Number(t.amount))} · {t.payment_status}</b><small>{paymentTime(t.created_at)} · {t.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{data.returns.filter((x:any)=>x.request_id===r.id).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.quantity} × {money(Number(x.unit_price))} · {x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.request_id===r.id&&t.id===x.transaction_id)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}{r.status==="completed"&&<WholesaleInvoiceButton order={r} sellerName={data.profile.business_name} sellerGst={data.profile.gst_number} sellerAddress={data.profile.address} buyerName={r.vendorName} transactions={data.transactions} returns={data.returns} refunds={data.refunds}/>}</div>}</article>})}
+        {data.requests.filter((r:any)=>["completed","cancelled"].includes(r.status) && (!archiveQuery || (r.id+" "+r.vendorName+" "+r.items.map((i:any)=>i.name).join(" ")).toLowerCase().includes(archiveQuery.toLowerCase())) && (!from || new Date(Number(r.created_at)).toISOString().slice(0,10)>=from) && (!through || new Date(Number(r.created_at)).toISOString().slice(0,10)<=through)).map((r:any)=>{const finance=orderFinancials(r,data.transactions,data.returns,data.refunds),open=expanded===r.id;return <article className="archive-order" key={r.id}><button type="button" className="admin-business-row" aria-expanded={open} onClick={()=>setExpanded(open?"":r.id)}><span><b>{r.vendorName} · #{r.id.slice(0,8).toUpperCase()}</b><small>{new Date(Number(r.created_at)).toLocaleString("en-IN")} · {r.items.length} items</small></span><span className={"badge "+statusTone(r.status)}>{r.status}</span><b>{money(finance.payable)}</b></button>{open&&<div className="archive-detail"><p>{r.notes||"No order notes"} · {orderHelp[r.status]}</p>{r.items.map((i:any)=><div className="record-row" key={i.product_id}><b>{i.name}</b><small>{i.quantity} {i.unit}{i.weight?" · "+i.weight:""}</small><b>{money(Number(i.quantity)*Number(i.unit_price))}</b></div>)}<div className="payment-numbers"><span>Paid <b>{money(finance.paid)}</b></span><span>Pending <b>{money(finance.balance)}</b></span><span>Returns <b>{money(finance.returnCredit)}</b></span><span>Refund due <b>{money(finance.refundDue)}</b></span></div><h3>Payments</h3>{data.transactions.filter((t:any)=>t.request_id===r.id).map((t:any)=><div className="record-row" key={t.id}><b>{money(Number(t.amount))} · {t.payment_status}</b><small>{paymentTime(t.created_at)} · {t.reference||"No reference"}</small></div>)}<h3>Returns and refunds</h3>{data.returns.filter((x:any)=>x.request_id===r.id).map((x:any)=><div className="record-row" key={x.id}><b>{x.product_name} · {x.status}</b><small>{x.quantity} × {money(Number(x.unit_price))} · {x.reason}</small></div>)}{data.refunds.filter((x:any)=>data.transactions.some((t:any)=>t.request_id===r.id&&t.id===x.transaction_id)).map((x:any)=><div className="record-row" key={x.id}><b>Refund {money(Number(x.amount))} · {x.status}</b><small>{x.reason}</small></div>)}{r.status==="completed"&&<WholesaleInvoiceButton order={r} sellerName={data.profile.business_name} sellerGst={data.profile.gst_number} sellerStateCode={data.profile.state_code} sellerAddress={data.profile.address} buyerName={r.vendorName} buyerDetails={r.buyerDetails} transactions={data.transactions} returns={data.returns} refunds={data.refunds} canEditPayment onPaymentUpdated={load}/>}</div>}</article>})}
       </div>}
       <div className="order-list wholesale-request-tiles">
         {data.requests.filter((r: any) => requestView === "open" && !["completed", "cancelled"].includes(r.status)).map((r: any) => {
@@ -1142,11 +1143,15 @@ function MarketplaceRequests({
                     order={r}
                     sellerName={data.profile.business_name}
                     sellerGst={data.profile.gst_number}
+                    sellerStateCode={data.profile.state_code}
                     sellerAddress={data.profile.address}
                     buyerName={r.vendorName}
+                    buyerDetails={r.buyerDetails}
                     transactions={data.transactions}
                     returns={data.returns}
                     refunds={data.refunds}
+                    canEditPayment
+                    onPaymentUpdated={load}
                   />
                 )}
               </div>
@@ -1474,7 +1479,7 @@ function VendorAccess({
                   <div><b>#{order.id.slice(0, 8).toUpperCase()}</b><small>{new Date(Number(order.created_at)).toLocaleDateString("en-IN")} · {orderLabel[order.status] || order.status}</small></div>
                   <div><b>{money(finance.payable)}</b><small>{money(finance.paid)} paid · {money(finance.balance)} pending</small></div>
                   <div className="actions">
-                    {["delivered", "completed"].includes(order.status) && <WholesaleInvoiceButton order={order} sellerName={data.profile.business_name} sellerGst={data.profile.gst_number} sellerAddress={data.profile.address} buyerName={vendor.name} transactions={data.transactions} returns={data.returns} refunds={data.refunds} />}
+                    {["delivered", "completed"].includes(order.status) && <WholesaleInvoiceButton order={order} sellerName={data.profile.business_name} sellerGst={data.profile.gst_number} sellerStateCode={data.profile.state_code} sellerAddress={data.profile.address} buyerName={vendor.name} buyerDetails={vendor.buyerDetails} transactions={data.transactions} returns={data.returns} refunds={data.refunds} canEditPayment onPaymentUpdated={load} />}
                   {data.permissions.includes("purchases") && <button className="btn" onClick={openRequests}>Manage order</button>}
                   </div>
                 </div>;
@@ -1567,11 +1572,15 @@ function Transactions({
                     order={r}
                     sellerName={data.profile.business_name}
                     sellerGst={data.profile.gst_number}
+                    sellerStateCode={data.profile.state_code}
                     sellerAddress={data.profile.address}
                     buyerName={r.vendorName}
+                    buyerDetails={r.buyerDetails}
                     transactions={data.transactions}
                     returns={data.returns}
                     refunds={data.refunds}
+                    canEditPayment
+                    onPaymentUpdated={load}
                   />
                 )}
               </article>
@@ -2079,6 +2088,11 @@ function WholesaleSettings({
           <label>
             GST number
             <input name="gstNumber" defaultValue={data.profile.gst_number} />
+          </label>
+          <label>
+            State code
+            <input name="stateCode" inputMode="numeric" maxLength={2} pattern="[0-9]{2}" defaultValue={data.profile.state_code || ""} placeholder="e.g. 29" />
+            <small>Two-digit GST state code used on wholesale invoices. If blank, the first two GSTIN digits are used when available.</small>
           </label>
           <label>
             Phone
