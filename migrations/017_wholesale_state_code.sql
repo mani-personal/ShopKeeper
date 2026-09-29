@@ -1,0 +1,1 @@
+ALTER TABLE wholesalers ADD COLUMN state_code TEXT NOT NULL DEFAULT '';
