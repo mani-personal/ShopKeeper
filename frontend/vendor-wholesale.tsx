@@ -593,6 +593,7 @@ function OrderCard({
             sellerGst={r.gst_number}
             sellerAddress={r.seller_address}
             buyerName={r.vendorName || "My store"}
+            buyerDetails={r.buyerDetails}
             transactions={transactions}
             returns={returns}
             refunds={refunds}
@@ -803,6 +804,7 @@ function VendorPaymentLedger({ data }: { data: any }) {
                     sellerGst={r.gst_number}
                     sellerAddress={r.seller_address}
                     buyerName={r.vendorName || "My store"}
+                    buyerDetails={r.buyerDetails}
                     transactions={data.transactions}
                     returns={data.returns}
                     refunds={data.refunds}
