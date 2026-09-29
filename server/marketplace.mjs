@@ -36,13 +36,22 @@ const admin = (user) => {
   if (!isAdmin(user)) throw bad("Administrator access required.", 403);
   requirePermission(user, "wholesale");
 };
-const storeName = (row) => {
+const vendorDetails = (row) => {
   try {
-    return JSON.parse(row.vendor_data || row.data).settings.name;
+    const data = JSON.parse(row.vendor_data || row.data || "{}");
+    const settings = data.settings || {};
+    return {
+      name: settings.name || "Vendor",
+      phone: settings.phone || "",
+      address: settings.address || "",
+      stateCode: String(settings.stateCode || settings.state_code || "").replace(/\D/g, "").slice(0, 2),
+      gstNumber: String(settings.gstNumber || settings.gst_number || "").trim(),
+    };
   } catch {
-    return "Vendor";
+    return { name: "Vendor", phone: "", address: "", stateCode: "", gstNumber: "" };
   }
 };
+const storeName = (row) => vendorDetails(row).name;
 
 async function orderRows(db, where, value) {
   const rows = await db
@@ -58,6 +67,7 @@ async function orderRows(db, where, value) {
   return rows.map((r) => ({
     ...r,
     vendorName: storeName(r),
+    buyerDetails: vendorDetails(r),
     total: Number(r.item_total),
     items: items.filter((i) => i.request_id === r.id),
   }));
@@ -212,6 +222,7 @@ export function registerMarketplaceRoutes(app, db) {
     const business = clean(req.body.businessName, 150),
       name = clean(req.body.name, 100),
       gst = clean(req.body.gstNumber, 30),
+      stateCode = typeof req.body.stateCode === "string" && /^\d{2}$/.test(req.body.stateCode.trim()) ? req.body.stateCode.trim() : "",
       areas = clean(req.body.serviceAreas, 300),
       brands = clean(req.body.brands, 500),
       mode = req.body.visibilityMode,
@@ -229,13 +240,14 @@ export function registerMarketplaceRoutes(app, db) {
     await transaction(db, async () => {
       await db
         .prepare(
-          "UPDATE wholesalers SET business_name=?,phone=?,address=?,gst_number=?,service_areas=?,brands=?,min_order=?,delivery_days=?,visibility_mode=?,business_category=? WHERE user_id=?",
+          "UPDATE wholesalers SET business_name=?,phone=?,address=?,gst_number=?,state_code=?,service_areas=?,brands=?,min_order=?,delivery_days=?,visibility_mode=?,business_category=? WHERE user_id=?",
         )
         .run(
           business,
           clean(req.body.phone, 30),
           clean(req.body.address, 300),
           gst,
+          stateCode,
           areas,
           brands,
           Number(req.body.minOrder),
@@ -301,6 +313,7 @@ export function registerMarketplaceRoutes(app, db) {
       subcategory.length > 100 ||
       weight.length > 50 ||
       !unit ||
+      !hsnCode ||
       !amount(p.price) ||
       Number(p.price) <= 0 ||
       !whole(p.stock) ||
@@ -320,7 +333,7 @@ export function registerMarketplaceRoutes(app, db) {
       !amount(specialDiscount) ||
       (specialActive && (specialDiscount <= 0 || specialDiscount >= Number(p.price) || (p.bulkPrice !== '' && p.bulkPrice != null && specialDiscount >= Number(p.bulkPrice))))
     )
-      throw bad("Check product, MRP, MOQ, bulk price and stock.");
+      throw bad("Check product, HSN, MRP, MOQ, bulk price and stock.");
     if (sku && await db.prepare("SELECT id FROM wholesale_products WHERE wholesaler_id=? AND sku=? AND id<>?").get(req.wholesalerId, sku, id))
       throw bad("This barcode already belongs to another wholesale pack size. Use a unique item code for each product.");
     await db
@@ -391,6 +404,8 @@ export function registerMarketplaceRoutes(app, db) {
         .get(wholesaler, vendor.id));
     if (!allowed)
       throw bad("This catalogue is not shared with your store.", 403);
+    if (products.some((p) => !String(p.hsn_code || "").trim()))
+      throw bad("HSN code is mandatory for every wholesale product before billing.", 409);
     let total = 0;
     for (const item of req.body.items) {
       const p = products.find((x) => x.id === item.productId),
@@ -633,6 +648,69 @@ export function registerMarketplaceRoutes(app, db) {
     });
     res.json({ ok: true });
   });
+  app.post("/api/marketplace/payments/:id/edit", async (req, res) => {
+    seller(req.user);
+    const status = req.body.paymentStatus,
+      entered = Number(req.body.amount),
+      reference = clean(req.body.reference, 200);
+    if (!["pending", "partial", "paid"].includes(status))
+      throw bad("Choose Pending, Partial or Paid.");
+    const payment = await db
+      .prepare(
+        "SELECT t.*,r.vendor_id,r.wholesaler_id,r.status AS order_status FROM wholesale_transactions t JOIN wholesale_requests r ON r.id=t.request_id WHERE t.id=? AND r.wholesaler_id=?",
+      )
+      .get(req.params.id, req.wholesalerId);
+    if (!payment) throw bad("Payment transaction not found.", 404);
+    const refund = await db
+      .prepare("SELECT COALESCE(SUM(amount),0) AS amount FROM wholesale_refunds WHERE transaction_id=? AND status='processed'")
+      .get(payment.id);
+    if (Number(refund.amount) > 0)
+      throw bad("This payment cannot be edited after a processed refund.", 409);
+    const order = await db
+      .prepare(
+        "SELECT r.*,COALESCE(SUM(i.quantity*i.unit_price),0) AS order_total FROM wholesale_requests r LEFT JOIN wholesale_request_items i ON i.request_id=r.id WHERE r.id=? AND r.wholesaler_id=? GROUP BY r.id",
+      )
+      .get(payment.request_id, req.wholesalerId);
+    if (!order) throw bad("Order not found.", 404);
+    const creditRow = await db
+      .prepare("SELECT COALESCE(SUM(quantity*unit_price),0) AS credit FROM wholesale_returns WHERE request_id=? AND status='received'")
+      .get(order.id);
+    const otherPaidRow = await db
+      .prepare(
+        "SELECT COALESCE(SUM(CASE WHEN payment_status IN ('paid','partial') THEN amount ELSE 0 END),0) AS paid FROM wholesale_transactions WHERE request_id=? AND id<>?",
+      )
+      .get(order.id, payment.id);
+    const otherRefundRow = await db
+      .prepare(
+        "SELECT COALESCE(SUM(f.amount),0) AS amount FROM wholesale_refunds f JOIN wholesale_transactions t ON t.id=f.transaction_id WHERE t.request_id=? AND f.status='processed' AND t.id<>?",
+      )
+      .get(order.id, payment.id);
+    const payable = roundMoney(Math.max(0, Number(order.order_total) - Number(creditRow.credit))),
+      otherPaid = roundMoney(Math.max(0, Number(otherPaidRow.paid) - Number(otherRefundRow.amount))),
+      due = roundMoney(Math.max(0, payable - otherPaid));
+    if (status === "pending") {
+      if (entered !== 0) throw bad("Pending payments must have an amount of zero.");
+    } else if (!amount(entered) || entered <= 0) {
+      throw bad("Enter a valid payment amount.");
+    } else if (status === "paid" && Math.abs(entered - due) > 0.009) {
+      throw bad(`Paid amount must equal the remaining ₹${due.toFixed(2)}.`);
+    } else if (status === "partial" && (entered >= due || entered <= 0)) {
+      throw bad(`Partial amount must be less than the remaining ₹${due.toFixed(2)}.`);
+    }
+    await db
+      .prepare("UPDATE wholesale_transactions SET amount=?,payment_status=?,reference=? WHERE id=?")
+      .run(status === "pending" ? 0 : entered, status, reference, payment.id);
+    await recordActivity(db, {
+      actorId: req.user.id,
+      vendorId: payment.vendor_id,
+      wholesalerId: req.wholesalerId,
+      scope: "all",
+      category: "payment",
+      title: "Wholesale payment edited",
+      detail: `Order #${payment.request_id.slice(0, 8).toUpperCase()} · ${status} ₹${(status === "pending" ? 0 : entered).toFixed(2)}`,
+    });
+    res.json({ ok: true });
+  });
   app.post("/api/marketplace/requests/:id/payment-submit", async (req, res) => {
     const vendor = await requireVendor(db, req.user, req.body.vendorId),
       reference = clean(req.body.reference, 200),
@@ -768,6 +846,8 @@ export function registerMarketplaceRoutes(app, db) {
       .all(source.id);
     if (!lines.length || lines.some((x) => !x.active || x.stock < x.quantity))
       throw bad("One or more products are currently unavailable.");
+    if (lines.some((x) => !String(x.hsn_code || "").trim()))
+      throw bad("HSN code is mandatory for every wholesale product before billing.", 409);
     const id = randomUUID();
     await transaction(db, async () => {
       await db
