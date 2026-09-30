@@ -971,14 +971,18 @@ export default function Home() {
               >
                 <SelectTrigger
                   className="store-chooser"
-                  aria-label="Switch vendor store"
+                  aria-label="Switch store"
+                  title="Switch store"
                 >
-                  <SelectValue />
+                  <SelectValue placeholder="Select store" />
                 </SelectTrigger>
                 <SelectContent>
                   {vendors.map((v) => (
                     <SelectItem key={v.id} value={v.id}>
-                      {v.name}
+                      <span className="store-option">
+                        <span>{v.name}</span>
+                        <small>{v.type}</small>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
