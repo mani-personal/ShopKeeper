@@ -8299,3 +8299,94 @@ html.dark .local-supplier-row.active {
   .invoice-tax-note { border-left: 0; padding: 0; background: transparent; }
   .invoice-credit-totals { border: 0; padding: 0; }
 }
+
+
+/* ShopKeeper v34 UX refinements */
+label:has(:required)::before {
+  content: "*";
+  color: #d84b4b;
+  font-weight: 800;
+  margin-right: 4px;
+}
+.store-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.store-option small {
+  margin-left: auto;
+  color: #71808f;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+.wholesale-metric-button {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.wholesale-metric-button:hover {
+  transform: translateY(-2px);
+}
+.wholesale-metric-button:focus-visible {
+  outline: 3px solid rgba(22,116,93,.25);
+  outline-offset: 2px;
+}
+.wholesale-overview-detail {
+  border-color: #cfe4da;
+  background: linear-gradient(180deg, #ffffff, #f8fcfa);
+}
+.wholesale-detail-list {
+  display: grid;
+  gap: 0;
+}
+.wholesale-detail-list .record-row {
+  border-bottom: 1px solid #e5eee9;
+}
+.logo-tile-header {
+  width: 100%;
+}
+.logo-upload-tile {
+  width: min(100%, 520px);
+  min-height: 150px;
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  border: 1px dashed #b9d2c6;
+  border-radius: 18px;
+  background: #f8fcfa;
+}
+.logo-tile-preview {
+  width: 112px;
+  height: 112px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dbe9e2;
+  border-radius: 14px;
+  background: #fff;
+  color: #6d8b7d;
+  overflow: hidden;
+}
+.logo-upload-tile .logo-preview {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 14px;
+}
+.logo-upload-tile-action {
+  justify-self: start;
+}
+@media (max-width: 560px) {
+  .logo-upload-tile {
+    grid-template-columns: 1fr;
+  }
+  .logo-tile-preview {
+    width: 96px;
+    height: 96px;
+  }
+}
