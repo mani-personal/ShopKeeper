@@ -609,180 +609,181 @@ export function WholesalePortal() {
 }
 
 function Overview({ data, onLowStock }: { data: any; onLowStock: () => void }) {
+  const [detail, setDetail] = useState<string | null>(null);
   const sales = data.transactions
       .filter((x: any) => ["paid", "partial"].includes(x.payment_status))
-      .reduce((sum: number, x: any) => sum + Number(x.amount), 0) - data.refunds.filter((x:any)=>x.status==="processed").reduce((sum:number,x:any)=>sum+Number(x.amount),0),
-    totalExpenses = (data.expenses||[]).reduce((sum:number,e:any)=>sum+Number(e.amount),0),
-    inventoryUnits = data.products.reduce(
-      (sum: number, x: any) => sum + Number(x.stock),
-      0,
-    ),
-    inventoryValue = data.products.reduce(
-      (sum: number, x: any) => sum + Number(x.stock) * Number(x.price),
-      0,
-    ),
-    outstanding = data.requests.reduce(
-      (sum: number, r: any) =>
-        sum +
-        orderFinancials(r, data.transactions, data.returns, data.refunds)
-          .balance,
-      0,
-    ),
-    returns = data.returns.filter(
-      (x: any) => !["received", "rejected"].includes(x.status),
-    );
+      .reduce((sum: number, x: any) => sum + Number(x.amount), 0) -
+    data.refunds.filter((x:any)=>x.status==="processed")
+      .reduce((sum:number,x:any)=>sum+Number(x.amount),0);
+  const totalExpenses = (data.expenses||[]).reduce((sum:number,e:any)=>sum+Number(e.amount),0);
+  const inventoryUnits = data.products.reduce((sum: number, x: any) => sum + Number(x.stock), 0);
+  const inventoryValue = data.products.reduce((sum: number, x: any) => sum + Number(x.stock) * Number(x.price), 0);
+  const outstanding = data.requests.reduce(
+    (sum: number, r: any) =>
+      sum + orderFinancials(r, data.transactions, data.returns, data.refunds).balance,
+    0,
+  );
+  const returns = data.returns.filter((x: any) => !["received", "rejected"].includes(x.status));
+  const lowStock = data.products.filter((x: any) => Number(x.stock) <= Number(x.min_qty || 1));
+  const activeProducts = data.products.filter((x: any) => x.active);
+  const selectedVendors = data.vendors.filter((x: any) => x.selected);
+  const openOrders = data.requests.filter((x: any) => !["completed", "cancelled"].includes(x.status));
+
+  const detailConfig: Record<string, { title: string; description: string; items: any[]; empty: string }> = {
+    lowStock: {
+      title: "Low / out of stock",
+      description: "Products at or below their minimum quantity.",
+      items: lowStock.map((x:any) => ({ title: x.name, meta: `${x.stock} ${x.unit} · Minimum ${x.min_qty || 1}` })),
+      empty: "All products are above their minimum stock level.",
+    },
+    products: {
+      title: "Products",
+      description: "Your wholesale catalogue and current availability.",
+      items: data.products.slice(0, 12).map((x:any) => ({ title: x.name, meta: `${x.stock} ${x.unit} · ${x.active ? "Active" : "Hidden"}` })),
+      empty: "No catalogue products yet.",
+    },
+    vendors: {
+      title: "Selected vendors",
+      description: "Vendors currently allowed to view your catalogue.",
+      items: selectedVendors.slice(0, 12).map((x:any) => ({ title: x.business_name || x.name, meta: x.phone || "Marketplace vendor" })),
+      empty: "No vendors are selected.",
+    },
+    orders: {
+      title: "Open orders",
+      description: "Orders that still need packing, delivery or payment action.",
+      items: openOrders.slice(0, 12).map((x:any) => ({ title: x.vendor_name || x.business_name || "Vendor order", meta: `${x.status} · ${money(Number(x.quoted_total ?? x.amount ?? 0))}` })),
+      empty: "There are no open orders.",
+    },
+    received: {
+      title: "Amount received",
+      description: "Confirmed paid and partial receipts, after processed refunds.",
+      items: data.transactions.filter((x:any) => ["paid","partial"].includes(x.payment_status)).slice(0, 12)
+        .map((x:any) => ({ title: x.reference || "Payment", meta: `${x.payment_status} · ${money(Number(x.amount))}` })),
+      empty: "No payments have been recorded.",
+    },
+    inventoryUnits: {
+      title: "Inventory units",
+      description: "Current stock across active and hidden products.",
+      items: data.products.filter((x:any) => Number(x.stock) > 0).slice(0, 12)
+        .map((x:any) => ({ title: x.name, meta: `${x.stock} ${x.unit}` })),
+      empty: "No stock is currently recorded.",
+    },
+    inventoryValue: {
+      title: "Inventory sale value",
+      description: "Current stock multiplied by wholesale price.",
+      items: data.products.filter((x:any) => Number(x.stock) > 0).slice(0, 12)
+        .map((x:any) => ({ title: x.name, meta: `${x.stock} × ${money(Number(x.price))} = ${money(Number(x.stock) * Number(x.price))}` })),
+      empty: "No inventory value is available.",
+    },
+    revenue: {
+      title: "Revenue collected",
+      description: "Confirmed paid and partial receipts.",
+      items: data.transactions.filter((x:any) => ["paid","partial"].includes(x.payment_status)).slice(0, 12)
+        .map((x:any) => ({ title: x.reference || "Payment", meta: money(Number(x.amount)) })),
+      empty: "No revenue has been collected.",
+    },
+    outstanding: {
+      title: "Outstanding",
+      description: "Pending balance across vendor orders.",
+      items: data.requests.map((r:any) => {
+        const f = orderFinancials(r, data.transactions, data.returns, data.refunds);
+        return { title: r.vendor_name || r.business_name || "Vendor order", meta: `${r.status} · ${money(Number(f.balance))}` };
+      }).filter((x:any) => !String(x.meta).endsWith("₹0.00")).slice(0, 12),
+      empty: "No outstanding balance.",
+    },
+    expenses: {
+      title: "Expenses",
+      description: "Recorded wholesale business expenses.",
+      items: (data.expenses || []).slice(0, 12).map((x:any) => ({ title: x.description || x.category, meta: `${x.expense_date || ""} · ${money(Number(x.amount))}` })),
+      empty: "No expenses have been recorded.",
+    },
+  };
+
+  const metric = (key: string, label: string, value: React.ReactNode, note: string, icon: React.ReactNode, className = "") => (
+    <button type="button" className={"metric wholesale-metric-button " + className} onClick={() => setDetail(key)} aria-label={`View ${label} details`}>
+      <div><span>{label}</span><span className="metric-icon tone-0">{icon}</span></div>
+      <strong>{value}</strong>
+      <small>{note}</small>
+    </button>
+  );
+
+  const selectedDetail = detail ? detailConfig[detail] : null;
+
   return (
     <div className="wholesale-dashboard">
       <div className="metrics">
-        {data.permissions?.includes("inventory") && <button type="button" className="metric wholesale-low-stock" onClick={onLowStock}>
-          <div><span>Low / out of stock</span><span className="metric-icon tone-2"><Package size={18} /></span></div>
-          <strong>{data.products.filter((x: any) => Number(x.stock) <= Number(x.min_qty || 1)).length}</strong>
-          <small>Open filtered inventory →</small>
-        </button>}
-        <div className="metric">
-          <div>
-            <span>Products</span>
-            <span className="metric-icon tone-0">
-              <Package size={18} />
-            </span>
-          </div>
-          <strong>{data.products.length}</strong>
-          <small>
-            {data.products.filter((x: any) => x.active).length} active products
-          </small>
-        </div>
-        <div className="metric">
-          <div>
-            <span>Selected vendors</span>
-            <span className="metric-icon tone-1">
-              <Users size={18} />
-            </span>
-          </div>
-          <strong>{data.vendors.filter((x: any) => x.selected).length}</strong>
-          <small>Can view your catalog</small>
-        </div>
-        <div className="metric">
-          <div>
-            <span>Open orders</span>
-            <span className="metric-icon tone-2">
-              <ShoppingCart size={18} />
-            </span>
-          </div>
-          <strong>
-            {
-              data.requests.filter(
-                (x: any) => !["completed", "cancelled"].includes(x.status),
-              ).length
-            }
-          </strong>
-          <small>Pack, deliver or collect payment</small>
-        </div>
-        <div className="metric">
-          <div>
-            <span>Amount received</span>
-            <span className="metric-icon tone-3">
-              <IndianRupee size={18} />
-            </span>
-          </div>
-          <strong>{money(sales)}</strong>
-          <small>{returns.length} open returns</small>
-        </div>
+        {data.permissions?.includes("inventory") && (
+          <button type="button" className="metric wholesale-low-stock wholesale-metric-button" onClick={() => setDetail("lowStock")}>
+            <div><span>Low / out of stock</span><span className="metric-icon tone-2"><Package size={18} /></span></div>
+            <strong>{lowStock.length}</strong>
+            <small>View stock details · inventory →</small>
+          </button>
+        )}
+        {metric("products", "Products", data.products.length, `${activeProducts.length} active products`, <Package size={18} />)}
+        {metric("vendors", "Selected vendors", selectedVendors.length, "Can view your catalogue", <Users size={18} />)}
+        {metric("orders", "Open orders", openOrders.length, "Pack, deliver or collect payment", <ShoppingCart size={18} />)}
+        {metric("received", "Amount received", money(sales), `${returns.length} open returns`, <IndianRupee size={18} />)}
       </div>
+
       <div className="metrics wholesale-finance-metrics">
-        <div className="metric">
-          <div>
-            <span>Inventory units</span>
-            <span className="metric-icon tone-0">
-              <Package size={18} />
-            </span>
-          </div>
-          <strong>{inventoryUnits}</strong>
-          <small>Across active and hidden items</small>
-        </div>
-        <div className="metric">
-          <div>
-            <span>Inventory sale value</span>
-            <span className="metric-icon tone-1">
-              <IndianRupee size={18} />
-            </span>
-          </div>
-          <strong>{money(inventoryValue)}</strong>
-          <small>Current stock × wholesale price</small>
-        </div>
-        <div className="metric">
-          <div>
-            <span>Revenue collected</span>
-            <span className="metric-icon tone-2">
-              <IndianRupee size={18} />
-            </span>
-          </div>
-          <strong>{money(sales)}</strong>
-          <small>Confirmed paid and partial receipts</small>
-        </div>
-        <div className="metric">
-          <div>
-            <span>Outstanding</span>
-            <span className="metric-icon tone-3">
-              <Truck size={18} />
-            </span>
-          </div>
-          <strong>{money(outstanding)}</strong>
-          <small>Pending across vendor orders</small>
-        </div>
-        {data.permissions.includes("reports")&&<div className="metric"><div><span>Expenses</span><span className="metric-icon tone-1"><IndianRupee size={18}/></span></div><strong>{money(totalExpenses)}</strong><small>Collected less expenses: {money(sales-totalExpenses)}</small></div>}
+        {metric("inventoryUnits", "Inventory units", inventoryUnits, "Across active and hidden items", <Package size={18} />)}
+        {metric("inventoryValue", "Inventory sale value", money(inventoryValue), "Current stock × wholesale price", <IndianRupee size={18} />)}
+        {metric("revenue", "Revenue collected", money(sales), "Confirmed paid and partial receipts", <IndianRupee size={18} />)}
+        {metric("outstanding", "Outstanding", money(outstanding), "Pending across vendor orders", <Truck size={18} />)}
+        {data.permissions.includes("reports") && metric("expenses", "Expenses", money(totalExpenses), `Collected less expenses: ${money(sales-totalExpenses)}`, <IndianRupee size={18} />)}
       </div>
+
+      {selectedDetail && (
+        <section className="panel padded wholesale-overview-detail" aria-live="polite">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">CARD DETAILS</span>
+              <h2>{selectedDetail.title}</h2>
+              <p>{selectedDetail.description}</p>
+            </div>
+            <div className="actions">
+              {detail === "lowStock" && <button className="btn primary" onClick={onLowStock}>Open inventory</button>}
+              <button className="btn" onClick={() => setDetail(null)}>Close</button>
+            </div>
+          </div>
+          {selectedDetail.items.length ? (
+            <div className="wholesale-detail-list">
+              {selectedDetail.items.map((item:any, index:number) => (
+                <div className="record-row" key={`${detail}-${index}`}>
+                  <div><b>{item.title}</b><small>{item.meta}</small></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-inline">{selectedDetail.empty}</p>
+          )}
+        </section>
+      )}
+
       <div className="bottom-grid">
         <section className="panel padded">
           <h2>Recent vendor orders</h2>
           {data.requests.slice(0, 5).map((r: any) => (
             <div className="record-row" key={r.id}>
-              <div>
-                <b>{r.vendorName}</b>
-                <small>
-                  {r.items
-                    .map((i: any) => i.name + " × " + i.quantity)
-                    .join(", ")}
-                </small>
-              </div>
-              <b>{money(Number(r.total))}</b>
-              <span className={"badge " + statusTone(r.status)}>
-                {orderLabel[r.status] || r.status}
-              </span>
+              <div><b>{r.vendor_name || r.business_name || "Vendor"}</b><small>{orderLabel[r.status] || r.status}</small></div>
+              <strong>{money(Number(r.quoted_total ?? r.amount ?? 0))}</strong>
             </div>
           ))}
-          {!data.requests.length && (
-            <p className="empty-inline">No vendor orders yet.</p>
-          )}
+          {!data.requests.length && <p className="empty-inline">No vendor orders yet.</p>}
         </section>
         <section className="panel padded">
-          <h2>Return alerts</h2>
-          {data.returns.slice(0, 5).map((r: any) => (
-            <div className="record-row" key={r.id}>
-              <RotateCcw size={18} />
-              <div>
-                <b>{r.product_name}</b>
-                <small>
-                  {r.vendorName} · {r.quantity} {r.unit}
-                </small>
-              </div>
-              <b>{money(Number(r.quantity) * Number(r.unit_price))}</b>
+          <h2>Inventory watch</h2>
+          {lowStock.slice(0, 5).map((p:any) => (
+            <div className="record-row" key={p.id}>
+              <div><b>{p.name}</b><small>{p.stock} {p.unit} available</small></div>
+              <span className="badge amber">Low stock</span>
             </div>
           ))}
-          {!data.returns.length && (
-            <p className="empty-inline">No product returns yet.</p>
-          )}
+          {!lowStock.length && <p className="empty-inline">Inventory is above minimum levels.</p>}
         </section>
       </div>
     </div>
   );
-}
-function WholesaleExpenses({data,reload}:{data:any;reload:()=>Promise<void>}) {
-  const [editing,setEditing]=useState<any>(null),[message,setMessage]=useState("");
-  const expenses=data.expenses||[], total=expenses.reduce((sum:number,e:any)=>sum+Number(e.amount),0);
-  return <div className="wholesale-expenses"><section className="panel padded"><h2>Wholesale expenses</h2><p>Rent, delivery, wages and other business costs. Total recorded: <b>{money(total)}</b></p><form key={editing?.id||"new"} className="form expense-editor" onSubmit={async event=>{event.preventDefault();const form=event.currentTarget,f=new FormData(form);try{await api("/api/wholesale/expenses",{id:editing?.id,category:f.get("category"),description:f.get("description"),amount:Number(f.get("amount")),expenseDate:f.get("expenseDate")});setEditing(null);form.reset();setMessage("Expense saved.");await reload()}catch(error){setMessage((error as Error).message)}}}>
-    <label>Category<select name="category" defaultValue={editing?.category||"Rent"}>{["Rent","Wages","Delivery","Utilities","Packaging","Maintenance","Other"].map(x=><option key={x}>{x}</option>)}</select></label>
-    <label>Description<input name="description" maxLength={300} defaultValue={editing?.description||""} placeholder="Optional note"/></label><label>Amount ₹<input name="amount" type="number" min="0.01" max="10000000" step="0.01" defaultValue={editing?.amount||""} required/></label><label>Date<input name="expenseDate" type="date" defaultValue={editing?.expense_date||new Date().toISOString().slice(0,10)} required/></label><button className="btn primary">{editing?"Update":"Add"} expense</button>{editing&&<button className="btn" type="button" onClick={()=>setEditing(null)}>Cancel</button>}</form><p role="status">{message}</p></section>
-    <section className="panel padded"><h2>Expense history</h2>{expenses.map((e:any)=><div className="record-row" key={e.id}><div><b>{e.category} · {money(Number(e.amount))}</b><small>{e.expense_date} · {e.description||"No note"}</small></div><div className="actions"><button className="btn" onClick={()=>setEditing(e)}>Edit</button><button className="text-button danger" onClick={async()=>{if(!confirm("Delete this expense?"))return;try{await api("/api/wholesale/expenses/"+e.id+"/delete",{});await reload()}catch(error){setMessage((error as Error).message)}}}>Delete</button></div></div>)}{!expenses.length&&<p className="empty-inline">No expenses recorded yet.</p>}</section></div>;
 }
 function WholesaleReports({ data }: { data: any }) {
   const revenue = data.transactions
@@ -2018,38 +2019,50 @@ function WholesaleSettings({
   return (
     <div className="settings-grid">
       <section className="panel padded logo-settings">
-        <h2>Wholesale logo</h2>
-        {data.profile.logo_image && (
-          <img
-            className="logo-preview"
-            src={data.profile.logo_image}
-            alt="Current wholesale logo"
-          />
-        )}
-        <label className="btn">
-          <Upload size={16} />
-          {busy ? "Uploading…" : "Upload logo"}
-          <input
-            hidden
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => {
-              void logo(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        {data.profile.logo_image && (
-          <button
-            className="text-button"
-            onClick={async () => {
-              await api("/api/wholesale/logo", { remove: true });
-              await reload();
-            }}
-          >
-            Remove logo
-          </button>
-        )}
+        <div className="logo-tile-header">
+          <div>
+            <span className="eyebrow">BRAND ASSET</span>
+            <h2>Wholesale logo</h2>
+            <p>Use a square logo for a clean header and invoice appearance.</p>
+          </div>
+        </div>
+        <div className="logo-upload-tile">
+          <div className="logo-tile-preview">
+            {data.profile.logo_image ? (
+              <img
+                className="logo-preview"
+                src={data.profile.logo_image}
+                alt="Current wholesale logo"
+              />
+            ) : (
+              <Package size={30} aria-hidden="true" />
+            )}
+          </div>
+          <label className="btn primary logo-upload-tile-action">
+            <Upload size={16} />
+            {busy ? "Uploading…" : data.profile.logo_image ? "Replace logo" : "Upload logo"}
+            <input
+              hidden
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                void logo(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {data.profile.logo_image && (
+            <button
+              className="text-button"
+              onClick={async () => {
+                await api("/api/wholesale/logo", { remove: true });
+                await reload();
+              }}
+            >
+              Remove logo
+            </button>
+          )}
+        </div>
         <p role="status">{message}</p>
       </section>
       <section className="panel padded">
