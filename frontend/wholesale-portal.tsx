@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Package,
+  Store,
   RefreshCw,
   LogOut,
   Users,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import { api, logout } from "./api";
+import { toast } from "sonner";
 import { money } from "@/lib/store";
 import { PasswordInput } from "./password-input";
 import { ThemeToggle } from "./theme";
@@ -65,6 +67,10 @@ const orderHelp: Record<string, string> = {
 };
 export function WholesalePortal() {
   const [data, setData] = useState<any>(),
+    [stores, setStores] = useState<any[]>([]),
+    [storeId, setStoreId] = useState(localStorage.getItem("shopkeeper-wholesale-store-id") || ""),
+    [storeManagerOpen, setStoreManagerOpen] = useState(false),
+    [storeBusy, setStoreBusy] = useState(false),
     [tab, setTab] = useState("Overview"),
     [message, setMessage] = useState(""),
     [editing, setEditing] = useState<any>(),
@@ -75,10 +81,50 @@ export function WholesalePortal() {
     [scanCode, setScanCode] = useState("");
   async function load() {
     try {
+      const storeResult = await api("/api/wholesale/stores");
+      const saved = localStorage.getItem("shopkeeper-wholesale-store-id") || "";
+      const selected = storeResult.stores?.some((x:any) => x.id === saved) ? saved : (storeResult.currentStoreId || storeResult.stores?.[0]?.id || "");
+      if (selected) localStorage.setItem("shopkeeper-wholesale-store-id", selected);
+      setStores(storeResult.stores || []);
+      setStoreId(selected);
       setData(await api("/api/wholesale/portal"));
       setMessage("");
     } catch (e) {
       setMessage((e as Error).message);
+    }
+  }
+  async function switchStore(id: string) {
+    if (!id || id === storeId || storeBusy) return;
+    setStoreBusy(true);
+    try {
+      localStorage.setItem("shopkeeper-wholesale-store-id", id);
+      setStoreId(id);
+      setTab("Overview");
+      await load();
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setStoreBusy(false);
+    }
+  }
+  async function createStore(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    setStoreBusy(true);
+    try {
+      const result = await api("/api/wholesale/stores", {
+        businessName: f.get("businessName"),
+        businessCategory: f.get("businessCategory"),
+      });
+      localStorage.setItem("shopkeeper-wholesale-store-id", result.storeId);
+      e.currentTarget.reset();
+      setStoreManagerOpen(false);
+      setMessage("Wholesale store created successfully.");
+      await load();
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setStoreBusy(false);
     }
   }
   useEffect(() => {
@@ -237,6 +283,19 @@ export function WholesalePortal() {
           ))}
         </nav>
         <div className="wholesale-header-actions">
+          {stores.length > 0 && (
+            <label className="wholesale-store-switcher">
+              <Store size={16} />
+              <select aria-label="Switch wholesale store" value={storeId} onChange={(e) => void switchStore(e.target.value)} disabled={storeBusy}>
+                {stores.map((store:any) => <option key={store.id} value={store.id}>{store.business_name}</option>)}
+              </select>
+            </label>
+          )}
+          {stores.length > 0 && data?.canCreateStore && (
+            <button className="btn" onClick={() => setStoreManagerOpen((v) => !v)} disabled={storeBusy}>
+              <Plus size={16} /> {storeManagerOpen ? "Close stores" : "Manage stores"}
+            </button>
+          )}
           <ThemeToggle />
           <Notifications
             onNavigate={(page) =>
@@ -263,6 +322,28 @@ export function WholesalePortal() {
             onNavigate={setTab} onLogout={logout} />
         </div>
       </header>
+      {storeManagerOpen && data?.canCreateStore && (
+        <section className="panel padded wholesale-store-manager">
+          <div className="panel-heading">
+            <div><span className="eyebrow">MULTI-STORE</span><h2>Manage wholesale stores</h2><p>Use one sign-in to switch between all stores owned by you.</p></div>
+          </div>
+          <div className="wholesale-store-manager-grid">
+            <div className="wholesale-store-list">
+              {stores.map((store:any) => (
+                <button type="button" key={store.id} className={store.id === storeId ? "wholesale-store-card active" : "wholesale-store-card"} onClick={() => void switchStore(store.id)}>
+                  <Store size={18} /><span><b>{store.business_name}</b><small>{store.business_category}</small></span>{store.id === storeId && <span className="badge green">Current</span>}
+                </button>
+              ))}
+            </div>
+            <form className="form wholesale-create-store" onSubmit={createStore}>
+              <h3>Create another store</h3>
+              <label>Store name *<input name="businessName" required maxLength={150} placeholder="e.g. Chennai Wholesale" /></label>
+              <label>Business category *<select name="businessCategory" defaultValue="General store" required>{businessTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+              <button className="btn primary" disabled={storeBusy}>{storeBusy ? "Creating…" : "Create store"}</button>
+            </form>
+          </div>
+        </section>
+      )}
       <div className="page">
         <div className="page-heading">
           <div>
@@ -605,6 +686,59 @@ export function WholesalePortal() {
         />
       </div>
     </main>
+  );
+}
+
+function WholesaleExpenses({ data, reload }: { data: any; reload: () => Promise<void> }) {
+  const [editing, setEditing] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const rows = data.expenses || [];
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    try {
+      await api("/api/wholesale/expenses", {
+        id: editing?.id,
+        category: f.get("category"),
+        description: f.get("description"),
+        amount: Number(f.get("amount")),
+        expenseDate: f.get("expenseDate"),
+      });
+      setEditing(null);
+      await reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(id: string) {
+    if (!confirm("Delete this expense?")) return;
+    try {
+      await api("/api/wholesale/expenses/" + encodeURIComponent(id) + "/delete", {});
+      await reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+  return (
+    <div className="wholesale-expenses">
+      <section className="panel padded">
+        <div className="panel-heading"><div><span className="eyebrow">EXPENSES</span><h2>{editing?.id ? "Edit expense" : "Record expense"}</h2><p>Track operating expenses for the currently selected wholesale store.</p></div></div>
+        <form className="form expense-editor" onSubmit={save}>
+          <label>Category *<input name="category" required maxLength={80} defaultValue={editing?.category || ""} placeholder="Rent, transport, utilities" /></label>
+          <label>Description *<input name="description" required maxLength={300} defaultValue={editing?.description || ""} /></label>
+          <label>Amount *<input name="amount" type="number" min="0.01" step="0.01" required defaultValue={editing?.amount || ""} /></label>
+          <label>Date *<input name="expenseDate" type="date" required defaultValue={editing?.expense_date || new Date().toISOString().slice(0,10)} /></label>
+          <div className="actions"><button className="btn primary" disabled={busy}>{busy ? "Saving…" : editing?.id ? "Update expense" : "Save expense"}</button>{editing && <button type="button" className="btn" onClick={() => setEditing(null)}>Cancel</button>}</div>
+        </form>
+      </section>
+      <section className="panel table-scroll">
+        <div className="panel-heading"><div><h2>Expense history</h2><p>{rows.length} recorded expense{rows.length === 1 ? "" : "s"}.</p></div></div>
+        {rows.length ? <table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{rows.map((row:any)=><tr key={row.id}><td>{row.expense_date}</td><td>{row.category}</td><td>{row.description}</td><td>{money(Number(row.amount))}</td><td><div className="actions"><button className="btn" onClick={() => setEditing(row)}>Edit</button><button className="btn" onClick={() => void remove(row.id)}>Delete</button></div></td></tr>)}</tbody></table> : <p className="empty-inline">No expenses have been recorded for this store.</p>}
+      </section>
+    </div>
   );
 }
 
