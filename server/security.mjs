@@ -228,13 +228,32 @@ export function requireSuperAdmin(user) {
     );
 }
 
-export async function wholesalePrincipal(db, user) {
+export async function wholesalePrincipal(db, user, requestedStoreId = "") {
   if (user?.role !== "wholesale")
     throw Object.assign(Error("Wholesale seller access required."), {
       status: 403,
     });
-  const member = await db
-    .prepare("SELECT wholesaler_id FROM wholesale_memberships WHERE user_id=?")
+
+  // Employee accounts keep the existing one-store membership behavior.
+  if (user.employee_permissions != null) {
+    const member = await db
+      .prepare("SELECT wholesaler_id FROM wholesale_memberships WHERE user_id=?")
+      .get(user.id);
+    return member?.wholesaler_id || user.id;
+  }
+
+  // Owner accounts may manage several wholesale stores while keeping one login.
+  const requested = typeof requestedStoreId === "string" ? requestedStoreId.trim() : "";
+  if (requested) {
+    const allowed = await db
+      .prepare("SELECT wholesaler_id FROM wholesale_store_owners WHERE owner_user_id=? AND wholesaler_id=?")
+      .get(user.id, requested);
+    if (!allowed)
+      throw Object.assign(Error("Wholesale store not found or access denied."), { status: 403 });
+    return allowed.wholesaler_id;
+  }
+  const first = await db
+    .prepare("SELECT wholesaler_id FROM wholesale_store_owners WHERE owner_user_id=? ORDER BY created_at,wholesaler_id LIMIT 1")
     .get(user.id);
-  return member?.wholesaler_id || user.id;
+  return first?.wholesaler_id || user.id;
 }
