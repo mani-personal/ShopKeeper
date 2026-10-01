@@ -427,7 +427,11 @@ export function createApp(
       if (a.type === "pricing_update") {
         await savePricing(db, user, a);
       } else if (a.type === "vendor_create") {
-        requireOwner(user, "stores");
+        if (user.role === "vendor") {
+          if (user.employee_permissions != null) throw bad("Only the store owner can create another store.", 403);
+        } else {
+          requireOwner(user, "stores");
+        }
         if (typeof a.id !== "string" || !/^vendor-[a-f0-9-]{36}$/.test(a.id))
           throw bad("Invalid vendor identifier.");
         for (const key of ["name", "owner"])
@@ -463,6 +467,9 @@ export function createApp(
               JSON.stringify(s),
               (await pricing(db)).trialDays,
             );
+        if (user.role === "vendor") {
+          await db.prepare("INSERT INTO memberships(user_id,vendor_id) VALUES(?,?) ON CONFLICT DO NOTHING").run(user.id, a.id);
+        }
         selected = a.id;
       } else if (a.type === "claim_access") {
         if (typeof a.code !== "string" || a.code.length > 200)
