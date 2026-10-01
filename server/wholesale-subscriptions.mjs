@@ -34,9 +34,9 @@ export async function wholesaleSubscriptionInfo(db, row, config) {
       .all(row.user_id),
   };
 }
-export async function requireWholesaleActive(db, user) {
+export async function requireWholesaleActive(db, user, requestedStoreId = "") {
   if (user.role !== "wholesale") return;
-  const ownerId = await wholesalePrincipal(db, user),
+  const ownerId = await wholesalePrincipal(db, user, requestedStoreId),
     row = await db
       .prepare("SELECT * FROM wholesalers WHERE user_id=?")
       .get(ownerId);
@@ -55,7 +55,7 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
   app.post("/api/wholesale/subscriptions/order", async (req, res) => {
     if (req.user.role !== "wholesale")
       throw bad("Wholesale seller access required.", 403);
-    const ownerId = await wholesalePrincipal(db, req.user),
+    const ownerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || "")),
       plan = req.body.plan;
     if (!["monthly", "yearly"].includes(plan))
       throw bad("Choose monthly or yearly.");
@@ -99,7 +99,7 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
   app.post("/api/wholesale/subscriptions/reference", async (req, res) => {
     if (req.user.role !== "wholesale")
       throw bad("Wholesale seller access required.", 403);
-    const ownerId = await wholesalePrincipal(db, req.user);
+    const ownerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || ""));
     if (
       typeof req.body.reference !== "string" ||
       req.body.reference.trim().length < 4 ||
@@ -122,7 +122,7 @@ export function registerWholesaleSubscriptionRoutes(app, db) {
   });
   app.post("/api/wholesale/subscriptions/extension-request", async (req,res) => {
     if(req.user.role!=="wholesale"||req.user.employee_permissions!==null) throw bad("Wholesale owner access required.",403);
-    const ownerId=await wholesalePrincipal(db,req.user),days=Number(req.body.days),reason=String(req.body.reason||"").trim();
+    const ownerId=await wholesalePrincipal(db,req.user,String(req.headers["x-wholesale-store-id"] || "")),days=Number(req.body.days),reason=String(req.body.reason||"").trim();
     if(!Number.isInteger(days)||days<1||days>3650||!reason||reason.length>100) throw bad("Enter 1–3650 days and a reason (up to 100 characters).");
     await transaction(db,async()=>{
       await db.prepare("SELECT user_id FROM wholesalers WHERE user_id=? FOR UPDATE").get(ownerId);
