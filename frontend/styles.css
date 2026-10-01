@@ -8390,3 +8390,16 @@ label:has(:required)::before {
     height: 96px;
   }
 }
+
+/* Multi-store wholesale owner workspace */
+.wholesale-store-switcher{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border,#d9dee8);border-radius:12px;padding:7px 10px;background:var(--panel,#fff);min-width:190px}
+.wholesale-store-switcher select{border:0;background:transparent;outline:0;font:inherit;font-weight:700;min-width:150px;color:inherit}
+.wholesale-store-manager{margin:14px 18px 0}
+.wholesale-store-manager-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);gap:18px}
+.wholesale-store-list{display:grid;gap:10px}
+.wholesale-store-card{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:13px 14px;border:1px solid var(--border,#d9dee8);border-radius:14px;background:var(--panel,#fff);color:inherit;cursor:pointer}
+.wholesale-store-card.active{border-color:var(--primary,#4f46e5);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary,#4f46e5) 12%,transparent)}
+.wholesale-store-card span:nth-child(2){display:grid;gap:3px;flex:1}
+.wholesale-store-card small{opacity:.7}
+.wholesale-create-store{border:1px solid var(--border,#d9dee8);border-radius:14px;padding:16px;background:var(--muted,#f7f8fa)}
+@media(max-width:760px){.wholesale-store-manager-grid{grid-template-columns:1fr}.wholesale-store-switcher{min-width:0;max-width:190px}.wholesale-header-actions{flex-wrap:wrap}}
