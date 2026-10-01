@@ -54,8 +54,8 @@ export function registerEmployeeRoutes(app, db) {
   app.get("/api/employees", async (req, res) => {
     if (req.user.role === "wholesale") {
       requireEmployeePermission(req.user, "employees");
-      await requireWholesaleActive(db, req.user);
-      const wholesalerId = await wholesalePrincipal(db, req.user);
+      await requireWholesaleActive(db, req.user, await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || "")));
+      const wholesalerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || ""));
       return res.json({
         employees: await wholesaleTeam(db, wholesalerId),
         accountType: "wholesale",
@@ -84,8 +84,8 @@ export function registerEmployeeRoutes(app, db) {
       access = employeeAccess(type, designation, cleanPermissions(req.body.permissions), employeePermissions(req.user));
     if (req.user.role === "wholesale") {
       requireEmployeePermission(req.user, "employees");
-      await requireWholesaleActive(db, req.user);
-      const wholesalerId = await wholesalePrincipal(db, req.user);
+      await requireWholesaleActive(db, req.user, await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || "")));
+      const wholesalerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || ""));
       await transaction(db, async () => {
         if (await db.prepare("SELECT 1 FROM users WHERE email=?").get(mail))
           throw bad("An account already uses this email.", 409);
@@ -142,7 +142,7 @@ export function registerEmployeeRoutes(app, db) {
       throw bad("You cannot remove your own signed-in account.", 409);
     if (req.user.role === "wholesale") {
       requireEmployeePermission(req.user, "employees");
-      const wholesalerId = await wholesalePrincipal(db, req.user);
+      const wholesalerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || ""));
       const result = await db
         .prepare(
           "DELETE FROM wholesale_memberships WHERE user_id=? AND wholesaler_id=? AND user_id IN (SELECT id FROM users WHERE employee_permissions IS NOT NULL)",
@@ -174,8 +174,8 @@ export function registerEmployeeRoutes(app, db) {
     const displayName = name(req.body.name), mail = email(req.body.email);
     if (!displayName) throw bad("Enter the employee name.");
     if (req.user.role === "wholesale") {
-      await requireWholesaleActive(db, req.user);
-      const wholesalerId = await wholesalePrincipal(db, req.user);
+      await requireWholesaleActive(db, req.user, await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || "")));
+      const wholesalerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || ""));
       await transaction(db, async () => {
         const target = await db.prepare("SELECT u.id,u.email FROM users u JOIN wholesale_memberships m ON m.user_id=u.id WHERE u.id=? AND m.wholesaler_id=? AND u.employee_permissions IS NOT NULL FOR UPDATE")
           .get(req.params.id, wholesalerId);
@@ -206,7 +206,7 @@ export function registerEmployeeRoutes(app, db) {
       access = employeeAccess(type, designation, cleanPermissions(req.body.permissions), employeePermissions(req.user));
     requireEmployeePermission(req.user, "employees");
     if (req.user.role === "wholesale") {
-      const wholesalerId = await wholesalePrincipal(db, req.user),
+      const wholesalerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || "")),
         existing = await db.prepare("SELECT u.employee_designation FROM users u JOIN wholesale_memberships m ON m.user_id=u.id WHERE u.id=? AND m.wholesaler_id=? AND u.employee_permissions IS NOT NULL")
           .get(req.params.id, wholesalerId);
       if (!existing || (designation === "custom" && existing.employee_designation !== "custom"))
