@@ -171,7 +171,7 @@ async function vendorTransactions(db, vendorId) {
 export function registerWholesaleRoutes(app, db) {
   app.use("/api/wholesale", async (req, res, next) => {
     if (req.user.role === "wholesale")
-      req.wholesalerId = await wholesalePrincipal(db, req.user);
+      req.wholesalerId = await wholesalePrincipal(db, req.user, String(req.headers["x-wholesale-store-id"] || ""));
     const path = req.originalUrl.split("?")[0],
       free = [
         "/api/wholesale/portal",
@@ -212,7 +212,7 @@ export function registerWholesaleRoutes(app, db) {
       req.user.role === "wholesale" &&
       !free.some((x) => path.startsWith(x))
     )
-      await requireWholesaleActive(db, req.user);
+      await requireWholesaleActive(db, req.user, req.wholesalerId);
     if (req.method === "POST" && !free.some((x) => path.startsWith(x))) {
       const json = res.json.bind(res);
       res.json = (body) => {
@@ -257,12 +257,51 @@ export function registerWholesaleRoutes(app, db) {
     }
     next();
   });
+  app.get("/api/wholesale/stores", async (req, res) => {
+    seller(req.user);
+    if (req.user.employee_permissions != null) {
+      const current = await wholesalePrincipal(db, req.user);
+      const row = await db.prepare("SELECT w.user_id AS id,w.business_name,w.business_category,w.created_at FROM wholesalers w WHERE w.user_id=?").get(current);
+      return res.json({ stores: row ? [row] : [], currentStoreId: current, canCreate: false });
+    }
+    const rows = await db.prepare(
+      "SELECT w.user_id AS id,w.business_name,w.business_category,w.created_at FROM wholesale_store_owners o JOIN wholesalers w ON w.user_id=o.wholesaler_id WHERE o.owner_user_id=? ORDER BY o.created_at,w.business_name"
+    ).all(req.user.id);
+    const requested = String(req.headers["x-wholesale-store-id"] || "");
+    const current = rows.some((x) => x.id === requested) ? requested : (rows[0]?.id || req.user.id);
+    res.json({ stores: rows, currentStoreId: current, canCreate: true });
+  });
+
+  app.post("/api/wholesale/stores", async (req, res) => {
+    seller(req.user);
+    if (req.user.employee_permissions != null) throw bad("Only the wholesale owner can create another store.", 403);
+    await limit(db, "wholesale-store-create:" + req.user.id, 10, 3600000);
+    const business = text(req.body.businessName, 150),
+      category = text(req.body.businessCategory, 80) || "General store";
+    if (!business || !businessTypes.includes(category)) throw bad("Enter a valid store name and business category.");
+    const storeUserId = randomUUID(),
+      shadowEmail = `store-${storeUserId}@internal.shopkeeper.local`,
+      passwordHash = await hashPassword(randomUUID() + randomUUID());
+    await transaction(db, async () => {
+      await db.prepare(
+        "INSERT INTO users(id,email,password_hash,role,name,created_at) VALUES(?,?,?,?,?,?)"
+      ).run(storeUserId, shadowEmail, passwordHash, "wholesale", req.user.name || business, Date.now());
+      await db.prepare(
+        "INSERT INTO wholesalers(user_id,business_name,phone,address,created_at,business_category) VALUES(?,?,?,?,?,?)"
+      ).run(storeUserId, business, "", "", Date.now(), category);
+      await db.prepare(
+        "INSERT INTO wholesale_store_owners(owner_user_id,wholesaler_id,created_at) VALUES(?,?,?)"
+      ).run(req.user.id, storeUserId, Date.now());
+    });
+    res.json({ ok: true, storeId: storeUserId });
+  });
+
   app.get("/api/wholesalers", async (req, res) => {
     requireSuperAdmin(req.user);
     const config = await wholesalePricing(db),
       rows = await db
         .prepare(
-          "SELECT u.id,u.email,u.name,u.disabled,w.* FROM users u JOIN wholesalers w ON w.user_id=u.id WHERE u.role='wholesale' ORDER BY w.created_at DESC",
+          "SELECT u.id,u.email,u.name,u.disabled,w.* FROM users u JOIN wholesalers w ON w.user_id=u.id WHERE u.role='wholesale' AND NOT EXISTS (SELECT 1 FROM wholesale_store_owners o WHERE o.owner_user_id<>o.wholesaler_id AND o.wholesaler_id=w.user_id) ORDER BY w.created_at DESC",
         )
         .all();
     res.json({
@@ -353,12 +392,12 @@ export function registerWholesaleRoutes(app, db) {
       data.offlineLedger = [];
     }
     if (!access.includes("reports")) data.expenses = [];
-    res.json({ ...data, permissions: access });
+    res.json({ ...data, permissions: access, currentStoreId: req.wholesalerId, canCreateStore: req.user.employee_permissions == null });
   });
   app.post("/api/wholesale/expenses", async (req, res) => {
     seller(req.user);
     requireEmployeePermission(req.user, "reports");
-    await requireWholesaleActive(db, req.user);
+    await requireWholesaleActive(db, req.user, req.wholesalerId);
     const id = req.body.id || randomUUID();
     if (typeof id !== "string" || id.length > 100) throw bad("Invalid expense identifier.");
     const category = text(req.body.category, 80), description = typeof req.body.description === "string" && req.body.description.length <= 300 ? req.body.description.trim() : null;
@@ -367,7 +406,7 @@ export function registerWholesaleRoutes(app, db) {
     if (!category || description === null || !Number.isFinite(amount) || amount <= 0 || amount > 10000000 || Math.round(amount*100) !== amount*100 || typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       throw bad("Enter a valid category, date and expense amount.");
     if (Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) throw bad("Enter a valid expense date.");
-    const owner = await wholesalePrincipal(db, req.user);
+    const owner = req.wholesalerId;
     const result = await db.prepare("INSERT INTO wholesale_expenses(id,wholesaler_id,category,description,amount,expense_date,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET category=EXCLUDED.category,description=EXCLUDED.description,amount=EXCLUDED.amount,expense_date=EXCLUDED.expense_date,updated_at=EXCLUDED.updated_at WHERE wholesale_expenses.wholesaler_id=EXCLUDED.wholesaler_id")
       .run(id,owner,category,description,amount,date,Date.now(),Date.now());
     if (!result.changes) throw bad("Expense not found.",404);
@@ -376,8 +415,8 @@ export function registerWholesaleRoutes(app, db) {
   app.post("/api/wholesale/expenses/:id/delete", async (req, res) => {
     seller(req.user);
     requireEmployeePermission(req.user, "reports");
-    await requireWholesaleActive(db, req.user);
-    const owner = await wholesalePrincipal(db, req.user);
+    await requireWholesaleActive(db, req.user, req.wholesalerId);
+    const owner = req.wholesalerId;
     const result = await db.prepare("DELETE FROM wholesale_expenses WHERE id=? AND wholesaler_id=?").run(req.params.id, owner);
     if (!result.changes) throw bad("Expense not found.",404);
     res.json({ ok:true });
